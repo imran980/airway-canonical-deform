@@ -7,7 +7,7 @@ malacia and wall collapse. Rigid, reliable regions update the permanent 3D map; 
 tissue is modelled separately instead of corrupting it. Output both the live airway geometry and the
 dynamic calibre change.
 
-This repository is the successor to [`bronchotrust`](https://github.com/imran980/bronchotrust), whose
+This repository is the successor to [`airway-recon-colmap`](https://github.com/imran980/airway-recon-colmap) (the pipeline formerly developed under the working name *bronchotrust*), whose
 rigid SfM/MVS pipeline and CT-validated measurement layer are the baseline and the source of the real
 test data. The motivation comes straight from that cohort: **8 of the 11 airways it could not measure
 failed on dynamic wall motion**, one examination (26-V2) breaks into two rigid models at a 14-frame
