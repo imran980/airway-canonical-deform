@@ -66,18 +66,24 @@ models = [m for m in models if os.path.isdir(m)]
 print(f"{lab}: {len(models)} sparse model(s); GT {len(t)} frames, {'collapse at t0=%.2fs' % t0 if has_event else 'no event'}")
 best = None
 for m in models:
-    imgs = read_model_txt(m); idx, C_e, F_e = [], [], []
+    imgs = read_model_txt(m); idx, C_e, F_e, Rc_e = [], [], [], []
     for name, (q, tv) in imgs.items():
         k = frame_index(name)
         if k is None or k >= len(t): continue
-        R = quat_to_R(q); idx.append(k); C_e.append(-R.T @ tv); F_e.append(R.T @ np.array([0, 0, 1.0]))
-    idx = np.array(idx); o = np.argsort(idx); idx, C_e, F_e = idx[o], np.array(C_e)[o], np.array(F_e)[o]
+        R = quat_to_R(q); idx.append(k); C_e.append(-R.T @ tv); F_e.append(R.T @ np.array([0, 0, 1.0])); Rc_e.append(R.T)
+    idx = np.array(idx); o = np.argsort(idx); idx, C_e, F_e, Rc_e = idx[o], np.array(C_e)[o], np.array(F_e)[o], np.array(Rc_e)[o]
     if len(idx) < 3: print(f"  model {os.path.basename(m)}: {len(idx)} frames, too few to align"); continue
     s, R, tr = umeyama(C_e, C_gt[idx]); C_al = (s * (R @ C_e.T)).T + tr; res = np.linalg.norm(C_al - C_gt[idx], axis=1)
+    # rotation from the camera ORIENTATIONS: centres alone fix the roll about a near-straight path only through the 0.35 mm
+    # jitter, which is too weak for sector-resolved comparison of the dense cloud
+    Mo = sum(c2w[k, :3, :3] @ Rc_e[j].T for j, k in enumerate(idx)); Uo, _, Vto = np.linalg.svd(Mo)
+    Ro = Uo @ np.diag([1, 1, np.sign(np.linalg.det(Uo @ Vto))]) @ Vto; tro = C_gt[idx].mean(0) - s * Ro @ C_e.mean(0)
+    res_o = np.linalg.norm((s * (Ro @ C_e.T)).T + tro - C_gt[idx], axis=1); rot_gap = np.degrees(np.arccos(np.clip((np.trace(Ro @ R.T) - 1) / 2, -1, 1)))
     F_al = (R @ F_e.T).T; ang = np.degrees(np.arccos(np.clip((F_al * F_gt[idx]).sum(1), -1, 1)))
     gaps = np.diff(idx); span = (int(idx.min()), int(idx.max()))
     rec = dict(model=os.path.basename(m), n_registered=int(len(idx)), frac_registered=float(len(idx) / len(t)), span=span, max_gap=int(gaps.max()) if len(gaps) else 0,
                scale_mm_per_unit=float(s), centre_rmse_mm=float(np.sqrt((res ** 2).mean())), centre_max_mm=float(res.max()),
+               centre_rmse_orientR_mm=float(np.sqrt((res_o ** 2).mean())), centre_vs_orientation_rotation_gap_deg=float(rot_gap),
                axis_err_deg_median=float(np.median(ang)), axis_err_deg_max=float(ang.max()), frames=idx.tolist(), residual_mm=res.tolist(), t=t[idx].tolist())
     rec["axis_err_deg"] = ang.tolist()
     if has_event:
@@ -93,14 +99,15 @@ for m in models:
                                        residual_mm=res2.tolist(), axis_err_deg=ang2.tolist())
     report["models"].append(rec)
     print(f"  model {rec['model']}: {rec['n_registered']}/{len(t)} frames (f{span[0]}-{span[1]}, max gap {rec['max_gap']}), scale {s:.4f} mm/unit, "
-          f"centre RMSE {rec['centre_rmse_mm']:.3f} mm (max {rec['centre_max_mm']:.3f}), axis err median {rec['axis_err_deg_median']:.2f} deg (max {rec['axis_err_deg_max']:.2f})")
+          f"centre RMSE {rec['centre_rmse_mm']:.3f} mm (max {rec['centre_max_mm']:.3f}), axis err median {rec['axis_err_deg_median']:.2f} deg (max {rec['axis_err_deg_max']:.2f}); "
+          f"orientation-based R: centre RMSE {rec['centre_rmse_orientR_mm']:.3f} mm, gap to centre-based R {rot_gap:.2f} deg")
     if has_event:
         print(f"    near event (|t-t0|<3 sigma): {rec['n_registered_near_event']}/{rec['n_gt_near_event']} frames registered, RMSE {rec['residual_near_event_mm']:.3f} mm vs {rec['residual_far_from_event_mm']:.3f} mm elsewhere")
         if "anchored_far" in rec:
             af = rec["anchored_far"]; print(f"    Sim(3) anchored on far frames only: scale {af['scale_mm_per_unit']:.4f}, RMSE far {af['rmse_far_mm']:.3f} mm / near {af['rmse_near_mm']:.3f} mm (max near {af['max_near_mm']:.3f}), axis err far {af['axis_far_deg_median']:.2f} / near {af['axis_near_deg_median']:.2f} deg")
             print("    per-frame (every 10th): t  GT z  |  centre err (mm)  axis err (deg)  [far-anchored]")
             for j in range(0, len(idx), 10): print(f"      {t[idx[j]]:5.2f}  {C_gt[idx[j],2]:6.2f}  |  {af['residual_mm'][j]:6.2f}  {af['axis_err_deg'][j]:6.2f}")
-    if best is None or rec["n_registered"] > best[0]["n_registered"]: best = (rec, s, R, tr)
+    if best is None or rec["n_registered"] > best[0]["n_registered"]: best = (rec, s, Ro, tro)
 
 # ---------------- dense cloud -----------------
 plys = sorted(glob.glob(os.path.join(ws, "dense*", "fused.ply")))
@@ -111,6 +118,29 @@ if plys and best is not None:
     import open3d as o3d
     from measure_csa import load_clean, measure
     Pc = load_clean(plys[0]); Pmm = (s * (R @ Pc.T)).T + tr
+    # where did the posterior (membrane) wall land? Points in a sagittal band |y| < 1.5 mm: x ~ -R is the canonical posterior
+    # wall, x ~ +R the anterior wall; anything in between is wall smeared into the lumen. Compared inside the event zone
+    # (|z - z0| < 2 sigma_z) and far from it; the anterior wall is the control.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import deforming_trachea as dt
+    p_ = dt.Params(**P); band = np.abs(Pmm[:, 1]) < 1.5; Rr = P["radius_mm"]
+
+    def wall_stats(mask):
+        xs = Pmm[mask, 0]
+        if len(xs) < 20: return dict(n=int(len(xs)))
+        return dict(n=int(len(xs)), posterior_median_x=float(np.median(xs[xs < -0.5 * Rr])) if (xs < -0.5 * Rr).sum() >= 10 else None,
+                    anterior_median_x=float(np.median(xs[xs > 0.5 * Rr])) if (xs > 0.5 * Rr).sum() >= 10 else None,
+                    interior_fraction=float(np.mean(np.abs(xs) < 0.7 * Rr)))
+
+    if has_event:
+        zone = np.abs(Pmm[:, 2] - P["collapse_z0_mm"]) < 2 * P["collapse_sigma_z_mm"]
+        far = (np.abs(Pmm[:, 2] - P["collapse_z0_mm"]) > 3 * P["collapse_sigma_z_mm"]) & (Pmm[:, 2] > z.min() + 3) & (Pmm[:, 2] < z.max() - 3)
+        iz0 = int(np.argmin(np.abs(z - P["collapse_z0_mm"]))); Dk = g["deformation"].astype(np.float32); kpk = int(np.argmax(Dk[:, iz0, :].max(1)))
+        Xp, _ = dt.deform_xy(g["r_canonical"][iz0:iz0 + 1], g["theta"], Dk[kpk, iz0:iz0 + 1, :], p_); x_peak = float(Xp[0, int(np.argmin(np.abs(g["theta"] - np.pi)))])
+        walls = dict(event_zone=wall_stats(band & zone), far=wall_stats(band & far), gt_posterior_x_canonical=-Rr, gt_posterior_x_at_peak=x_peak, gt_anterior_x=Rr)
+        print(f"  posterior wall (sagittal band) in event zone: {walls['event_zone']} | far from event: {walls['far']} | GT posterior x canonical {-Rr:.2f}, at peak {x_peak:.2f}; anterior {Rr:.2f}")
+    else:
+        walls = dict(all=wall_stats(band & (Pmm[:, 2] > z.min() + 3) & (Pmm[:, 2] < z.max() - 3)), gt_posterior_x=-Rr, gt_anterior_x=Rr)
+        print(f"  walls (sagittal band): {walls['all']} | GT posterior x {-Rr:.2f}, anterior {Rr:.2f}")
     # independent estimator in GT coordinates: 1-mm slabs perpendicular to the GT axis (z), polar median radius in 36 sectors
     zc = np.arange(z.min() + 1, z.max() - 1, 1.0); csa_z, cov_z = np.full(len(zc), np.nan), np.zeros(len(zc))
     for i, zb in enumerate(zc):
@@ -123,7 +153,7 @@ if plys and best is not None:
         csa_z[i] = 0.5 * abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))
     gt_z = np.interp(zc, z, CSA[0]); ok = np.isfinite(csa_z)
     d_ce = 2 * np.sqrt(csa_z[ok] / np.pi); d_gt = 2 * np.sqrt(gt_z[ok] / np.pi)
-    report["dense"] = dict(ply=plys[0], n_points_clean=int(len(Pc)), n_slabs=int(len(zc)), n_slabs_measured=int(ok.sum()), z_measured=[float(zc[ok].min()), float(zc[ok].max())] if ok.any() else None,
+    report["dense"] = dict(ply=plys[0], walls=walls, n_points_clean=int(len(Pc)), n_slabs=int(len(zc)), n_slabs_measured=int(ok.sum()), z_measured=[float(zc[ok].min()), float(zc[ok].max())] if ok.any() else None,
                            calibre_err_mm_mean=float(np.mean(np.abs(d_ce - d_gt))) if ok.any() else None, calibre_bias_mm=float(np.mean(d_ce - d_gt)) if ok.any() else None,
                            csa_ratio_est_over_gt_median=float(np.median(csa_z[ok] / gt_z[ok])) if ok.any() else None, csa_z_mm2=csa_z.tolist(), gt_csa_z_mm2=gt_z.tolist(), zc=zc.tolist(), cov=cov_z.tolist())
     print(f"  dense: {len(Pc)} clean points; {ok.sum()}/{len(zc)} 1-mm slabs measured (z {report['dense']['z_measured']}); "

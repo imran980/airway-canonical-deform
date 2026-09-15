@@ -282,6 +282,10 @@ def generate(p, out, render=False, save_meshes=False):
     csa0 = CSA[0]; imin = np.unravel_index(np.argmin(CSA), CSA.shape)
     print(f"{out}: {N} frames, z 0-{p.length_mm:.0f} mm, canonical D_CE {2*np.sqrt(csa0.mean()/np.pi):.2f} mm; amplitudes breath {p.breath_amp_mm:.2f} / collapse {p.collapse_amp_mm:.2f} mm; "
           f"min CSA {CSA.min():.1f} mm^2 ({100*(1-CSA.min()/csa0[imin[1]]):.0f}% reduction) at t={t[imin[0]]:.2f}s z={z[imin[1]]:.0f} mm")
+    json.dump(dict(model="OPENCV", width=p.width, height=p.height, fx=p.fx, fy=p.fy, cx=p.cx, cy=p.cy, k1=0.0, k2=0.0, p1=0.0, p2=0.0,
+                   params_colmap=[p.fx, p.fy, p.cx, p.cy, 0.0, 0.0, 0.0, 0.0],
+                   note="renders are pure pinhole (no distortion applied): give THIS file to the rigid pipeline, not the scope's calibration"),
+              open(f"{out}/intrinsics_pinhole.json", "w"), indent=1)
     if render:
         n = render_frames(out, np.stack(V_all), F, C, poses, p); print(f"  rendered {n} frames" if n else "  no renders written")
     return dict(t=t, poses=poses, z=z, theta=theta, r0=r0, D=D, CSA=CSA)

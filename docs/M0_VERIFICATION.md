@@ -54,8 +54,19 @@ the texture check:
    autocorrelation over (z-shift, roll) and fails if any off-origin peak exceeds 0.35. The old texture scores 0.95
    at one ring period and a 12° roll; the new one passes.
 
-The general lesson for the deformation work: on a tube, "N of N frames registered in one model" is not evidence
-that the poses are right. Every claim needs the alignment-free relative-rotation check in `pose_diag.py`.
+3. A test-setup error rather than a generator bug, caught by the dense comparison: the renders are pure pinhole
+   (no lens distortion is applied), but the pipeline was first given the real scope's calibration and so
+   undistorted images that were never distorted. Poses were unaffected (they are governed by the image centre),
+   but the reconstructed wall shell sat 0.4 to 0.6 mm inside the true wall everywhere. A two-view simulation
+   reproduces the sign and size (a wall point at 415 px image radius triangulates 0.28 mm too close to the axis;
+   the far periphery is worse). Every run directory now contains `intrinsics_pinhole.json`, which is what the
+   pipeline must be given. The same mechanism means that on real video an error in the distortion coefficients
+   biases calibre, not just sharpness.
+
+The general lessons for the deformation work: on a tube, "N of N frames registered in one model" is not evidence
+that the poses are right, so every claim needs the alignment-free relative-rotation check in `pose_diag.py`; and
+the dense cloud must be compared to the truth in millimetres with the scale taken from the cameras, because a scale
+fitted to the calibre profile (as CT registration does) would silently absorb a uniform radius bias.
 
 `verify.png` in each run directory shows CSA(t) at three stations, membrane-versus-cartilage displacement, the
 camera path, and rendered frames before, at and after the event. Look at it: the frames must go round, slit,
@@ -68,8 +79,8 @@ and cross-sections:
 
 ```bash
 export BRONCHO_COLMAP=<colmap binary> ; BT=<path to airway-recon-colmap checkout>
-python $BT/pipeline/recover_clip.py --video runs/synth_static_30.mp4   --calib <intrinsics.json> --gpus 0,1 --out runs/rigid_static   > runs/rigid_static/run.log
-python $BT/pipeline/recover_clip.py --video runs/synth_collapse_30.mp4 --calib <intrinsics.json> --gpus 2,3 --out runs/rigid_collapse > runs/rigid_collapse/run.log
+python $BT/pipeline/recover_clip.py --video runs/synth_static_30.mp4   --calib runs/synth_static_30/intrinsics_pinhole.json   --session synth_static   --lo 0 --hi 179 --gpus 0,1 --out runs/rigid_static   > runs/rigid_static/run.log
+python $BT/pipeline/recover_clip.py --video runs/synth_collapse_30.mp4 --calib runs/synth_collapse_30/intrinsics_pinhole.json --session synth_collapse --lo 0 --hi 179 --gpus 2,3 --out runs/rigid_collapse > runs/rigid_collapse/run.log
 BRONCHOTRUST=$BT python synthetic/score_rigid.py runs/rigid_static   runs/synth_static_30/gt.npz
 BRONCHOTRUST=$BT python synthetic/score_rigid.py runs/rigid_collapse runs/synth_collapse_30/gt.npz
 ```
