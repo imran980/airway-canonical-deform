@@ -5,11 +5,16 @@ with cartilage RINGS: shallow inward ridges every `ring_period_mm`, present only
 (anterior + lateral, 270 deg). The posterior MEMBRANE (90 deg sector centred on theta = pi) is smooth and is
 the only part that moves:
 
-    r(theta, z, t) = r0(theta, z) - w(theta) * [ A_breath(t) + A_collapse(t) * g(z) ]
+    d(theta, z, t) = w(theta) * [ A_breath(t) + A_collapse(t) * g(z) ]        (mm)
 
-w(theta) is a raised cosine over the membrane sector (1 at its centre, 0 at its edges, 0 on the cartilage),
-A_breath is a periodic breathing excursion, A_collapse a transient Gaussian-in-time event localised in z by
-g(z) (modelled on 26-V2, f1908-1921). Scenarios: static, breathing, collapse, malacia, and `uniform`, in
+and the membrane moves ANTERIORLY by d (a translation towards the anterior wall, so the lumen goes round ->
+crescent -> slit, as seen in 20-V2 and 26-V2), not radially: a radial push of a posterior sector can never remove
+more than that sector's share of the area, whereas the real wall bows across the lumen. w(theta) is a raised
+cosine over the membrane sector (1 at its centre, 0 at its edges, 0 on the cartilage), A_breath a periodic
+breathing excursion, A_collapse a transient Gaussian-in-time event localised in z by g(z) (26-V2, f1908-1921).
+Scenario amplitudes are solved so that the peak CROSS-SECTIONAL AREA reduction matches a target (quiet breathing
+12%, malacia 45% as in 20-V1, collapse 75% as in 26-V2). In the collapse scenario the lateral walls fold with the
+membrane (posterior half-circumference moves); in the others only the 120 deg posterior sector does. Scenarios: static, breathing, collapse, malacia, and `uniform`, in
 which w(theta) = 1 everywhere: a uniform radial contraction, which is the case that is NOT identifiable from a
 forward-looking monocular camera without an anatomical prior (it looks like camera motion along the axis).
 That scenario exists so the identifiability experiment can show the failure, not hide it.
@@ -31,12 +36,14 @@ import argparse, json, os
 from dataclasses import dataclass, asdict, field
 import numpy as np
 
+# Scenarios are specified by the peak CROSS-SECTIONAL AREA reduction they must produce (the clinically meaningful
+# quantity); the wall displacement amplitude that achieves it is solved numerically in generate().
 SCENARIOS = {
-    "static":    dict(breath_amp_mm=0.0, collapse_amp_mm=0.0, uniform=False),
-    "breathing": dict(breath_amp_mm=0.6, collapse_amp_mm=0.0, uniform=False),
-    "malacia":   dict(breath_amp_mm=2.4, collapse_amp_mm=0.0, uniform=False),      # ~45% area loss at end-expiration
-    "collapse":  dict(breath_amp_mm=0.4, collapse_amp_mm=3.6, uniform=False),      # transient near-occlusion, 26-V2 style
-    "uniform":   dict(breath_amp_mm=1.0, collapse_amp_mm=0.0, uniform=True),       # the non-identifiable case
+    "static":    dict(breath_target=0.00, collapse_target=0.00, uniform=False),
+    "breathing": dict(breath_target=0.12, collapse_target=0.00, uniform=False),   # quiet breathing
+    "malacia":   dict(breath_target=0.45, collapse_target=0.00, uniform=False),   # 20-V1: 45% expiratory reduction
+    "collapse":  dict(breath_target=0.10, collapse_target=0.75, uniform=False, membrane_half_angle_deg=90.0),   # 26-V2: dark lumen 12% -> 3%
+    "uniform":   dict(breath_target=0.30, collapse_target=0.00, uniform=True),    # non-identifiable: whole circumference, radial
 }
 
 
@@ -47,13 +54,15 @@ class Params:
     taper_mm_per_mm: float = 0.0            # linear change of R with z (positive = widening distally)
     ring_period_mm: float = 4.0
     ring_depth_mm: float = 0.3
-    membrane_half_angle_deg: float = 45.0    # posterior sector = 90 deg, centred on theta = pi
+    membrane_half_angle_deg: float = 60.0    # posterior sector = 120 deg (membrane + folding lateral tips), centred on theta = pi
     n_z: int = 241
     n_theta: int = 180
     fps: float = 30.0
     duration_s: float = 6.0
+    breath_target: float = 0.0               # peak CSA reduction from breathing (fraction); amplitude solved from it
     breath_amp_mm: float = 0.0
     breath_period_s: float = 3.0
+    collapse_target: float = 0.0             # peak CSA reduction at the collapse event (fraction)
     collapse_amp_mm: float = 0.0
     collapse_t0_s: float = 3.0
     collapse_sigma_s: float = 0.22
@@ -105,10 +114,39 @@ def deformation(t, z, theta, p):
     return w[None, :] * (a + c * g[:, None])
 
 
+def deform_xy(r0, theta, d, p):
+    """deformed cross-section coordinates (nz, nt) X, Y from canonical radii r0 and displacement field d (mm).
+    Membrane: anterior translation (+x; posterior is at theta = pi, x < 0), capped so the wall cannot pass the
+    anterior inner wall. Uniform scenario: radial contraction (r0 - d, floored at 0.3 mm)."""
+    c, s_ = np.cos(theta)[None, :], np.sin(theta)[None, :]
+    if p.uniform:
+        r = np.maximum(r0 - d, 0.3); return r * c, r * s_
+    X, Y = r0 * c, r0 * s_
+    Xa = r0.max(axis=1, keepdims=True) - 0.3                         # anterior inner wall (per slice)
+    return np.minimum(X + d, Xa), Y
+
+
+def csa_from_xy(X, Y):
+    """shoelace area of each z-slice polygon (nz, nt) -> (nz,)"""
+    return 0.5 * np.abs(np.sum(X * np.roll(Y, -1, axis=1) - np.roll(X, -1, axis=1) * Y, axis=1))
+
+
 def cross_section_area(r, theta):
-    """polygon area of each z-slice from radii on a uniform theta grid (nz, nt) -> (nz,)"""
-    r2 = np.roll(r, -1, axis=1); dth = theta[1] - theta[0]
-    return 0.5 * np.sum(r * r2 * np.sin(dth), axis=1)
+    return csa_from_xy(r * np.cos(theta)[None, :], r * np.sin(theta)[None, :])
+
+
+def solve_amplitude(target, z, theta, p):
+    """displacement amplitude (mm) that reduces the mid-slice CSA by `target` (bisection; 0 if target is 0)."""
+    if target <= 0: return 0.0
+    r0 = canonical_radius(z, theta, p); w, _ = sector_weights(theta, p); k = len(z) // 2
+    a0 = cross_section_area(r0[k:k + 1], theta)[0]
+    def f(amp):
+        X, Y = deform_xy(r0[k:k + 1], theta, w[None, :] * amp, p); return 1 - csa_from_xy(X, Y)[0] / a0
+    lo, hi = 0.0, 4 * p.radius_mm
+    if f(hi) < target: print(f"  warning: target reduction {target:.0%} not reachable (max {f(hi):.0%}); using max"); return hi
+    for _ in range(60):
+        mid = 0.5 * (lo + hi); lo, hi = (mid, hi) if f(mid) < target else (lo, mid)
+    return 0.5 * (lo + hi)
 
 
 def camera_poses(t, p):
@@ -129,8 +167,13 @@ def camera_poses(t, p):
 
 
 def surface_points(r, z, theta):
-    """(nz, nt, 3) vertices; theta measured from +x (anterior), posterior membrane centred on -x."""
+    """(nz, nt, 3) vertices of an undeformed radius field; theta from +x (anterior), posterior centred on -x."""
     X = r * np.cos(theta)[None, :]; Y = r * np.sin(theta)[None, :]; Z = np.broadcast_to(z[:, None], r.shape)
+    return np.stack([X, Y, Z], axis=-1)
+
+
+def surface_points_deformed(r0, z, theta, d, p):
+    X, Y = deform_xy(r0, theta, d, p); Z = np.broadcast_to(z[:, None], r0.shape)
     return np.stack([X, Y, Z], axis=-1)
 
 
@@ -191,19 +234,23 @@ def generate(p, out, render=False, save_meshes=False):
     os.makedirs(out, exist_ok=True)
     z = np.linspace(0, p.length_mm, p.n_z); theta = np.linspace(0, 2 * np.pi, p.n_theta, endpoint=False)
     t = np.arange(0, p.duration_s, 1.0 / p.fps); N = len(t)
+    p.breath_amp_mm = solve_amplitude(p.breath_target, z, theta, p)
+    p.collapse_amp_mm = solve_amplitude(p.collapse_target, z, theta, p) if p.collapse_target > 0 else 0.0
+    if p.collapse_target > 0: p.collapse_amp_mm = max(p.collapse_amp_mm - p.breath_amp_mm * 0.5 * (1 - np.cos(2 * np.pi * p.collapse_t0_s / p.breath_period_s)), 0.0)
     r0 = canonical_radius(z, theta, p); F = grid_triangles(p.n_z, p.n_theta)
     rng = np.random.default_rng(p.seed); C = vertex_colors(z, theta, p, rng)
     poses = camera_poses(t, p)
     D = np.zeros((N, p.n_z, p.n_theta), np.float32); CSA = np.zeros((N, p.n_z)); V_all = []
     for i, ti in enumerate(t):
-        d = deformation(ti, z, theta, p); r = np.maximum(r0 - d, 0.3)
-        D[i] = d; CSA[i] = cross_section_area(r, theta); V = surface_points(r, z, theta); V_all.append(V)
+        d = deformation(ti, z, theta, p)
+        D[i] = d; X, Y = deform_xy(r0, theta, d, p); CSA[i] = csa_from_xy(X, Y)
+        V = surface_points_deformed(r0, z, theta, d, p); V_all.append(V)
         if save_meshes: write_ply(f"{out}/mesh_{i:05d}.ply", V, F, C)
     write_ply(f"{out}/canonical_mesh.ply", surface_points(r0, z, theta), F, C)
     np.savez_compressed(f"{out}/gt.npz", t=t, poses_c2w=poses, z=z, theta=theta, r_canonical=r0, deformation=D.astype(np.float16),
                         csa_mm2=CSA, params=json.dumps(asdict(p)))
     csa0 = CSA[0]; imin = np.unravel_index(np.argmin(CSA), CSA.shape)
-    print(f"{out}: {N} frames, z 0-{p.length_mm:.0f} mm, canonical D_CE {2*np.sqrt(csa0.mean()/np.pi):.2f} mm; "
+    print(f"{out}: {N} frames, z 0-{p.length_mm:.0f} mm, canonical D_CE {2*np.sqrt(csa0.mean()/np.pi):.2f} mm; amplitudes breath {p.breath_amp_mm:.2f} / collapse {p.collapse_amp_mm:.2f} mm; "
           f"min CSA {CSA.min():.1f} mm^2 ({100*(1-CSA.min()/csa0[imin[1]]):.0f}% reduction) at t={t[imin[0]]:.2f}s z={z[imin[1]]:.0f} mm")
     if render:
         n = render_frames(out, np.stack(V_all), F, C, poses, p); print(f"  rendered {n} frames" if n else "  no renders written")
