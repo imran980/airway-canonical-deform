@@ -25,7 +25,7 @@ bronchotrust intrinsics json) or a default 1080p, ~98 deg lens. Renders are opti
 distortion is not applied in v0: the real pipeline undistorts anyway).
 
 Ground truth written to <out>/gt.npz: t (N), poses_c2w (N,4,4), z (nz), theta (nt), r_canonical (nz,nt),
-deformation (N,nz,nt) float16, csa_mm2 (N,nz), params (json string). Plus canonical_mesh.ply and, with
+deformation (N,nz,nt) float32, csa_mm2 (N,nz), params (json string). Plus canonical_mesh.ply and, with
 --save-meshes, one mesh per frame.
 
 Usage:
@@ -122,8 +122,11 @@ def deform_xy(r0, theta, d, p):
     if p.uniform:
         r = np.maximum(r0 - d, 0.3); return r * c, r * s_
     X, Y = r0 * c, r0 * s_
-    Xa = r0.max(axis=1, keepdims=True) - 0.3                         # anterior inner wall (per slice)
-    return np.minimum(X + d, Xa), Y
+    # a displaced posterior point may not pass the anterior wall at its own y (the wall is a circle, not a plane);
+    # points with d == 0 are never touched, so the canonical geometry is exact.
+    Rs = r0.max(axis=1, keepdims=True); cap = np.sqrt(np.maximum(Rs ** 2 - Y ** 2, 0.0)) - 0.3
+    Xd = np.where(d > 0, np.minimum(X + d, cap), X)
+    return Xd, Y
 
 
 def csa_from_xy(X, Y):
@@ -247,7 +250,7 @@ def generate(p, out, render=False, save_meshes=False):
         V = surface_points_deformed(r0, z, theta, d, p); V_all.append(V)
         if save_meshes: write_ply(f"{out}/mesh_{i:05d}.ply", V, F, C)
     write_ply(f"{out}/canonical_mesh.ply", surface_points(r0, z, theta), F, C)
-    np.savez_compressed(f"{out}/gt.npz", t=t, poses_c2w=poses, z=z, theta=theta, r_canonical=r0, deformation=D.astype(np.float16),
+    np.savez_compressed(f"{out}/gt.npz", t=t, poses_c2w=poses, z=z, theta=theta, r_canonical=r0, deformation=D.astype(np.float32),
                         csa_mm2=CSA, params=json.dumps(asdict(p)))
     csa0 = CSA[0]; imin = np.unravel_index(np.argmin(CSA), CSA.shape)
     print(f"{out}: {N} frames, z 0-{p.length_mm:.0f} mm, canonical D_CE {2*np.sqrt(csa0.mean()/np.pi):.2f} mm; amplitudes breath {p.breath_amp_mm:.2f} / collapse {p.collapse_amp_mm:.2f} mm; "
