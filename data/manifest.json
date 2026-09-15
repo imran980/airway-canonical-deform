@@ -1,0 +1,49 @@
+{
+  "note": "Real-video testbed inherited from bronchotrust. Paths are on the lab machine; videos and CT are not in git. Frame indices are sequential-decode indices (never seek).",
+  "bronchotrust_repo": "/home/mi3dr/projects/bronchotrust",
+  "cases": {
+    "26-V2": {
+      "role": "transient posterior-wall collapse breaks rigid SfM into two models; the canonical map must survive it",
+      "video": "/home/mi3dr/dataset/New broncho/more videos with calib/26-V2.MP4",
+      "calibration": "/home/mi3dr/projects/bronchotrust/runs/own_data/retry/26-V2_intrinsics.json",
+      "window": [1600, 2100],
+      "event_frames": [1908, 1921],
+      "rigid_sfm_break": [1902, 1923],
+      "rigid_models": {"A": [1620, 1901], "B": [1924, 2065]},
+      "evidence": "dark-lumen area falls from ~12% to ~3% of the field over the event; bronchotrust docs/figures/fig_wallcollapse_26-V2.png",
+      "rigid_clouds": ["/home/mi3dr/projects/bronchotrust/runs/own_data/all_reconstructions_ply/26-V2.ply", "/home/mi3dr/projects/bronchotrust/runs/own_data/all_reconstructions_ply/baseline/26-V2_segmentB.ply"]
+    },
+    "20-V1": {
+      "role": "tracheobronchomalacia with paired inspiratory/expiratory CT: two-phase check on deformation magnitude",
+      "video": "/home/mi3dr/dataset/New broncho/Videos with Matched CT Scans/20-V1 - 6-10-2025.MP4",
+      "calibration": "/home/mi3dr/projects/bronchotrust/runs/own_data/retry/20-V1_intrinsics.json",
+      "window": [2500, 3000],
+      "ct_zip": "/home/mi3dr/dataset/New broncho/Videos with Matched CT Scans/CT Scans/20V1.zip",
+      "ct_series": {"inspiratory": "SER00005 CHEST 1.00 BL60 AXIAL INSP", "expiratory": "SER00011 CHEST 1.00 BL60 AXIAL EXP"},
+      "ct_finding": "tracheal CSA 33 -> 18 mm^2 (45% expiratory reduction); reconstruction matches the inspiratory phase at 0.83 mm",
+      "ct_ground_truth": "/home/mi3dr/projects/bronchotrust/runs/own_data/ct_validated_3/ts_20-V1/gt_20-V1.json/ground_truth.npz"
+    },
+    "2-V2": {
+      "role": "static control, CT-validated (1.07 mm, n 40, clinically normal); deformation field must stay ~0",
+      "video": "/home/mi3dr/dataset/validation-videos/First 15 Videos/2-V2.MP4",
+      "calibration": "/home/mi3dr/projects/bronchotrust/runs/retriage_first15/_calib/2_v2/intrinsics_pinned.json",
+      "window": [2870, 3370],
+      "ct_ground_truth": "/home/mi3dr/projects/bronchotrust/runs/own_data/ct_validated_3/ts_2-V2/gt_2-V2.json/ground_truth.npz",
+      "rigid_cloud": "/home/mi3dr/projects/bronchotrust/runs/own_data/all_reconstructions_ply/2-V2.ply"
+    },
+    "19-V1": {
+      "role": "static control, CT-validated (0.72 mm, n 16); 105-degree scope",
+      "video": "/home/mi3dr/dataset/New broncho/Videos with Matched CT Scans/19-V1 - 7-17-2025.mp4",
+      "calibration": "/home/mi3dr/projects/bronchotrust/runs/own_data/retry/19-V1_intrinsics.json",
+      "window": [1700, 2450],
+      "fps": 60,
+      "ct_ground_truth": "/home/mi3dr/projects/bronchotrust/runs/own_data/ct_gt/gt_19-V1.npz",
+      "rigid_workspace": "/home/mi3dr/projects/bronchotrust/runs/own_data/retry/rr_19-V1b_tr2"
+    }
+  },
+  "wall_motion_failures": {
+    "note": "class W in the bronchotrust capture taxonomy; a rigid pipeline could not measure them",
+    "cases": ["20-V2", "14-V1", "31-V1", "16-V2", "13-V1", "24-V2", "32-V2", "10-V1"],
+    "frames_reviewed": "/home/mi3dr/projects/bronchotrust/docs/results/cmig/tables/capture_notes.tex"
+  }
+}

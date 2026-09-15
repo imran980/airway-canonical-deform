@@ -1,0 +1,6 @@
+numpy<2
+scipy
+open3d
+opencv-python
+pytest
+# bronchotrust (calibration, frame decoding, measurement gates): set BRONCHOTRUST=/path/to/bronchotrust
