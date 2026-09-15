@@ -54,6 +54,8 @@ class Params:
     taper_mm_per_mm: float = 0.0            # linear change of R with z (positive = widening distally)
     ring_period_mm: float = 4.0
     ring_depth_mm: float = 0.3
+    ring_spacing_jitter: float = 0.15        # per-ring spacing jitter (fraction of ring_period_mm): real rings are irregular
+    ring_depth_jitter: float = 0.25          # per-ring depth jitter (fraction); both 0 -> the periodic v0 tube
     membrane_half_angle_deg: float = 60.0    # posterior sector = 120 deg (membrane + folding lateral tips), centred on theta = pi
     n_z: int = 241
     n_theta: int = 180
@@ -94,11 +96,24 @@ def sector_weights(theta, p):
     return (np.ones_like(theta) if p.uniform else w), cart
 
 
+def ring_profile(z, p):
+    """Cartilage ring profile along z: ridge(z) in [0, 1] (1 at crests, 0 at troughs) and a per-ring depth scale.
+    Spacing and depth are jittered per ring so the tube has no exact periodicity in z for rigid SfM to alias on
+    (v0's periodic rings + helical texture let it register a ring-shifted, rolled copy). Deterministic in p.seed."""
+    rng = np.random.default_rng(p.seed + 7); troughs = [0.0]
+    while troughs[-1] < z.max() + p.ring_period_mm:
+        troughs.append(troughs[-1] + p.ring_period_mm * (1 + p.ring_spacing_jitter * rng.uniform(-1, 1)))
+    troughs = np.array(troughs); dscale = 1 + p.ring_depth_jitter * rng.uniform(-1, 1, len(troughs))
+    k = np.clip(np.searchsorted(troughs, z, side="right") - 1, 0, len(troughs) - 2)
+    phase = 2 * np.pi * (z - troughs[k]) / (troughs[k + 1] - troughs[k]) - np.pi
+    return 0.5 * (1 + np.cos(phase)), dscale[k]
+
+
 def canonical_radius(z, theta, p):
     R = p.radius_mm + p.taper_mm_per_mm * (z - z.mean())
-    ridge = 0.5 * (1 + np.cos(2 * np.pi * z / p.ring_period_mm))      # 1 at ring crests
+    ridge, dscale = ring_profile(z, p)                                   # 1 at ring crests, per-ring depth
     _, cart = sector_weights(theta, p)
-    return R[:, None] - p.ring_depth_mm * ridge[:, None] * cart[None, :]
+    return R[:, None] - (p.ring_depth_mm * dscale * ridge)[:, None] * cart[None, :]
 
 
 def amplitude(t, p):
@@ -187,15 +202,27 @@ def grid_triangles(nz, nt):
 
 
 def vertex_colors(z, theta, p, rng):
-    """procedural mucosa: pink base, paler cartilage crests, darker vascular streaks (a texture cue for SfM)."""
-    _, cart = sector_weights(theta, p); ridge = 0.5 * (1 + np.cos(2 * np.pi * z / p.ring_period_mm))
-    base = np.array([0.80, 0.45, 0.42]); pale = np.array([0.92, 0.72, 0.66]); dark = np.array([0.55, 0.20, 0.22])
-    ring = ridge[:, None] * cart[None, :]
-    ph = rng.uniform(0, 2 * np.pi, 5); streak = np.zeros((len(z), len(theta)))
-    for k in range(5): streak += np.maximum(0, np.cos(3 * theta[None, :] + 0.15 * z[:, None] + ph[k]) - 0.85) / 0.15
-    streak = np.clip(streak, 0, 1)
+    """procedural mucosa with NO periodicity in theta or z.
+    v0 used helical streaks cos(3*theta + 0.15*z) on top of periodic rings: a roll of 0.2 rad with a shift of one ring
+    period reproduced the scene exactly, and rigid SfM locked onto that rolled/shifted copy (11.5 deg roll jumps,
+    wrong scale) while reporting every frame registered. Real mucosa has no such symmetry, so the texture must not
+    either. All fields are random Fourier features evaluated on the cylinder embedding (x, y, z) in mm: aperiodic,
+    incommensurate with the ring period, and continuous across the theta seam."""
+    _, cart = sector_weights(theta, p); ridge, _ = ring_profile(z, p)
+    X = np.stack(np.broadcast_arrays(p.radius_mm * np.cos(theta)[None, :], p.radius_mm * np.sin(theta)[None, :], z[:, None]), -1)
+
+    def rff(n, scale_mm):
+        W = rng.standard_normal((n, 3)) / scale_mm; ph = rng.uniform(0, 2 * np.pi, n); amp = rng.standard_normal(n)
+        f = (np.cos(X @ W.T + ph) * amp).sum(-1); return f / f.std()
+
+    mottle = 0.5 * rff(48, 3.0) + 0.3 * rff(48, 1.0) + 0.2 * rff(48, 0.45)                 # multi-scale colour mottling
+    vessel = np.exp(-(rff(48, 2.5) / 0.12) ** 2) + 0.7 * np.exp(-(rff(48, 1.2) / 0.10) ** 2)  # ridged noise: thin dark branching lines
+    vessel = np.clip(vessel, 0, 1); speckle = 0.03 * rng.standard_normal(mottle.shape)
+    base = np.array([0.80, 0.45, 0.42]); pale = np.array([0.92, 0.72, 0.66]); dark = np.array([0.50, 0.18, 0.20])
+    ring = 0.6 * ridge[:, None] * cart[None, :]                                          # pale crests, subtle as in vivo
     col = base[None, None] * (1 - ring[..., None]) + pale[None, None] * ring[..., None]
-    col = col * (1 - 0.6 * streak[..., None]) + dark[None, None] * 0.6 * streak[..., None]
+    col = col * (1 + 0.18 * mottle[..., None] + speckle[..., None])
+    col = col * (1 - 0.65 * vessel[..., None]) + dark[None, None] * 0.65 * vessel[..., None]
     return np.clip(col, 0, 1)
 
 

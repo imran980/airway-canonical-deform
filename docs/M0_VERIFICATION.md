@@ -34,10 +34,28 @@ Each run prints a PASS/FAIL line per check and ends with `=> M0 VERIFIED` or `=>
 | camera speed / rotations valid / jitter bounded | the pose track is what the parameters say |
 | area recomputed from displacement field matches stored CSA | CSA(z,t) is a function of the geometry, not a separately typed number |
 | canonical mesh cross-section = canonical CSA | the mesh that gets rendered is the same geometry the CSA was computed from |
+| texture has no (roll, z-shift) symmetry | rigid SfM cannot lock onto a rolled or ring-shifted copy of the tube (see below). The colour explained by the ring geometry is regressed out first, so only the mucosal texture is tested; the origin's own correlation blob is flood-filled and any peak outside it above 0.35 fails |
+| texture correlation length is short | the texture actually carries information at the scale SfM needs: the origin blob is shorter than one ring period in z and narrower than 90° in roll |
 
-The last check is the one that caught a real bug: the anterior-wall cap in `deform_xy` was clipping every anterior
-point by 0.3 mm even with zero displacement, so the rendered mesh and the stored canonical CSA disagreed by 0.9 %.
-The cap now applies only to displaced points and follows the wall's circle. Both scenarios pass all checks.
+Two real bugs were caught by these checks, one by the mesh check and one by the rigid cross-check that then became
+the texture check:
+
+1. The anterior-wall cap in `deform_xy` clipped every anterior point by 0.3 mm even with zero displacement, so the
+   rendered mesh and the stored canonical CSA disagreed by 0.9 %. The cap now applies only to displaced points and
+   follows the wall's circle.
+2. The v0 texture was helical: streaks followed `cos(3θ + 0.15 z)` on top of rings periodic in z. Rolling the tube
+   by 0.2 rad (11.5°) while shifting it by one ring period (4 mm) reproduced the scene exactly. On the static video
+   the rigid pipeline registered all 180 frames at 1.2 px and then, from frame 35 on, rolled the model in steps of
+   11.5° and 22.9° (one and two ring periods) to a total of 45°, with the wrong scale, while reporting nothing wrong.
+   Whether a given run hit the symmetry was luck: the run before it, on frames differing only by the 0.3 mm cap,
+   was exact. Real mucosa has no such symmetry, so the texture is now aperiodic random Fourier fields on the
+   cylinder surface, and the rings are jittered per ring in spacing (±15 %) and depth (±25 %), as real tracheal
+   rings are, so the geometry has no exact period either. `verify_m0.py` measures the high-passed luminance
+   autocorrelation over (z-shift, roll) and fails if any off-origin peak exceeds 0.35. The old texture scores 0.95
+   at one ring period and a 12° roll; the new one passes.
+
+The general lesson for the deformation work: on a tube, "N of N frames registered in one model" is not evidence
+that the poses are right. Every claim needs the alignment-free relative-rotation check in `pose_diag.py`.
 
 `verify.png` in each run directory shows CSA(t) at three stations, membrane-versus-cartilage displacement, the
 camera path, and rendered frames before, at and after the event. Look at it: the frames must go round, slit,
