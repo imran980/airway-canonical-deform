@@ -27,6 +27,9 @@ ap.add_argument("--ahead", default="4,18", help="stations measured this many mm 
 ap.add_argument("--skip-stereo", action="store_true", help="reuse existing depth maps in <out>/dense")
 ap.add_argument("--min-pts", type=int, default=25, help="minimum posterior points for a displacement estimate")
 ap.add_argument("--dense-from", default=None, help="reuse the depth maps of another run's dense dir (implies --skip-stereo)")
+ap.add_argument("--kappa", default="0", help="velocity-bias coefficient kappa(Z) = a + b*Z (mm), calibrated on breathing; '0' disables")
+ap.add_argument("--vel-iters", type=int, default=2)
+ap.add_argument("--sources", default="sym", choices=["sym", "past", "future"], help="stereo sources for frame k: k-w..k+w (sym), k-w..k-1 (past) or k+1..k+w (future)")
 a = ap.parse_args(); os.makedirs(a.out, exist_ok=True); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap"); MIN_PTS = a.min_pts
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "synthetic")); import deforming_trachea as dt
 
@@ -92,7 +95,9 @@ print(f"scene->mm: scale {s:.4f} mm/unit, camera-centre RMSE after alignment {np
 if not a.skip_stereo:
     with open(f"{dense}/stereo/patch-match.cfg", "w") as f:
         for k, n in zip(frames, names):
-            src = [byidx[j] for j in range(k - a.window, k + a.window + 1) if j != k and j in byidx]
+            rng_ = range(k - a.window, k + a.window + 1) if a.sources == "sym" else (range(k - a.window, k) if a.sources == "past" else range(k + 1, k + a.window + 1))
+            src = [byidx[j] for j in rng_ if j != k and j in byidx]
+            if not src: src = [byidx[j] for j in range(k - a.window, k + a.window + 1) if j != k and j in byidx]
             f.write(n + "\n" + ", ".join(src) + "\n")
     sh([COLMAP, "patch_match_stereo", "--workspace_path", dense, "--workspace_format", "COLMAP", "--PatchMatchStereo.geom_consistency", "true",
         "--PatchMatchStereo.max_image_size", str(a.max_size), "--PatchMatchStereo.gpu_index", a.gpus,
@@ -131,7 +136,7 @@ def membrane_d(x, y, r_can):
     return float(np.median((xi[use] + xa[use]) / w0[use])) if use.sum() >= MIN_PTS else np.nan
 
 
-depth_dir = f"{dense}/stereo/depth_maps"; n_used = 0
+depth_dir = f"{dense}/stereo/depth_maps"; n_used = 0; zc_arr = np.full(N, np.nan)
 for j, (k, n) in enumerate(zip(frames, names)):
     fp = f"{depth_dir}/{n}.geometric.bin"
     if not os.path.exists(fp): continue
@@ -139,7 +144,7 @@ for j, (k, n) in enumerate(zip(frames, names)):
     h_, w_ = dep.shape; sx, sy = w_ / W, h_ / H; fx, cx, fy, cy = fx * sx, cx * sx, fy * sy, cy * sy      # depth maps may be downscaled relative to the camera record
     v, u = np.mgrid[0:h_:2, 0:w_:2]; d_ = dep[::2, ::2]; ok = d_ > 0
     Xc = np.stack([(u[ok] - cx) / fx * d_[ok], (v[ok] - cy) / fy * d_[ok], d_[ok]], 1)
-    Xw = (Rc2w[j] @ Xc.T).T + C[j]; Pmm = (s * (Ro @ Xw.T)).T + tro; zc = float(((s * (Ro @ C[j])) + tro)[2])
+    Xw = (Rc2w[j] @ Xc.T).T + C[j]; Pmm = (s * (Ro @ Xw.T)).T + tro; zc = float(((s * (Ro @ C[j])) + tro)[2]); zc_arr[k] = zc
     n_used += 1
     for i, zz in enumerate(zs):
         if not (zc + lo_ahead <= zz <= zc + hi_ahead): continue
@@ -170,6 +175,34 @@ for i in range(nz):
             est["d_smooth"][k, i] = float(np.median(win))
             Xm, Ym = dt.deform_xy(r0[iz_gt[i]:iz_gt[i] + 1], th, (max(est["d_smooth"][k, i], 0.0) * w_memb)[None, :], p); est["csa_model_s"][k, i] = float(dt.csa_from_xy(Xm, Ym)[0])
 
+# velocity correction. Short-window stereo on a laterally moving surface converts the surface's image motion into
+# parallax: the depth of the membrane is biased by kappa * v_out * Z / c (v_out = outward radial velocity of the wall,
+# Z = distance ahead of the camera, c = camera speed), measured against the truth on breathing (kappa ~ 0.30, zero at
+# rest). The estimate carries its own time series, so the velocity is available and the bias is removed iteratively.
+ka, kb = (float(v) for v in (a.kappa.split(",") + ["0"])[:2]) if a.kappa != "0" else (0.0, 0.0)
+zc_f = np.interp(np.arange(N), np.where(np.isfinite(zc_arr))[0], zc_arr[np.isfinite(zc_arr)]); cam_speed = float(np.median(np.abs(np.diff(zc_f))) * p.fps)
+Zahead = zs[None, :] - zc_f[:, None]; est["d_vel"] = est["d_smooth"].copy(); est["csa_model_v"] = np.full((N, nz), np.nan)
+if ka != 0 or kb != 0:
+    def robust_rate(dser, hw=3, min_n=4):
+        """d(d)/dt per frame from a local linear fit over +-hw frames; NaN where fewer than min_n samples support it."""
+        out = np.full(len(dser), np.nan)
+        for k in range(len(dser)):
+            lo, hi = max(0, k - hw), min(len(dser), k + hw + 1); seg = dser[lo:hi]; tt = t[lo:hi]; fin = np.isfinite(seg)
+            if fin.sum() >= min_n and (tt[fin].max() - tt[fin].min()) >= 3 / p.fps: out[k] = np.polyfit(tt[fin], seg[fin], 1)[0]
+        return out
+    kap = ka + kb * Zahead; dv = est["d_smooth"].copy()
+    for it in range(a.vel_iters):
+        ddt = np.full((N, nz), np.nan)
+        for i in range(nz): ddt[:, i] = robust_rate(dv[:, i])
+        corr = np.clip(kap * ddt * Zahead / cam_speed, -4.0, 4.0)                          # v_out = -d(d)/dt; bounded correction
+        dv = np.where(np.isfinite(corr), est["d_smooth"] + corr, est["d_smooth"])
+    est["d_vel"] = dv
+    for k in range(N):
+        for i in np.where(np.isfinite(est["d_vel"][k]))[0]:
+            Xm, Ym = dt.deform_xy(r0[iz_gt[i]:iz_gt[i] + 1], th, (max(est["d_vel"][k, i], 0.0) * w_memb)[None, :], p); est["csa_model_v"][k, i] = float(dt.csa_from_xy(Xm, Ym)[0])
+    print(f"velocity correction: kappa(Z) = {ka} + {kb}*Z, camera speed {cam_speed:.2f} mm/s, {a.vel_iters} iterations")
+else: est["csa_model_v"] = est["csa_model_s"].copy() if "csa_model_s" in est else est["csa_model"].copy()
+
 # ---------------------------------------------------------------- 3. metrics vs truth and vs the rigid map
 ok = np.isfinite(est["csa_model"]) & np.isfinite(gt["csa"]) & (est["cov"] >= 0.6); okf = ok & np.isfinite(est["csa_free"])
 rel_free = est["csa_free"][okf] / gt["csa"][okf] - 1; rel_model = est["csa_model"][ok] / gt["csa"][ok] - 1
@@ -179,6 +212,9 @@ res = dict(workspace=a.workspace, synth_run=a.synth_run, window=a.window, frames
            csa_model_rel_err_median=float(np.median(rel_model)), csa_model_rel_err_iqr=[float(np.percentile(rel_model, 25)), float(np.percentile(rel_model, 75))], csa_model_rel_err_p90_abs=float(np.percentile(np.abs(rel_model), 90)),
            cartilage_radius_dev_mm_median=float(np.nanmedian(np.abs(est["r_cart_dev"][ok]))), cartilage_radius_dev_mm_p90=float(np.nanpercentile(np.abs(est["r_cart_dev"][ok]), 90)),
            membrane_d_err_mm_median=float(np.median(np.abs(est["d_est"][ok] - gt["d"][ok]))), membrane_d_err_mm_p90=float(np.percentile(np.abs(est["d_est"][ok] - gt["d"][ok]), 90)))
+okv = ok & np.isfinite(est["csa_model_v"]); rel_v = est["csa_model_v"][okv] / gt["csa"][okv] - 1
+res.update(csa_model_vel_rel_err_median=float(np.median(rel_v)), csa_model_vel_rel_err_iqr=[float(np.percentile(rel_v, 25)), float(np.percentile(rel_v, 75))], csa_model_vel_rel_err_p90_abs=float(np.percentile(np.abs(rel_v), 90)),
+           membrane_d_vel_err_mm_median=float(np.median(np.abs(est["d_vel"][okv] - gt["d"][okv]))), membrane_d_vel_err_mm_p90=float(np.percentile(np.abs(est["d_vel"][okv] - gt["d"][okv]), 90)), kappa=a.kappa, camera_speed_mm_s=cam_speed)
 oks = ok & np.isfinite(est["csa_model_s"]); rel_s = est["csa_model_s"][oks] / gt["csa"][oks] - 1
 res.update(csa_model_smoothed_rel_err_median=float(np.median(rel_s)), csa_model_smoothed_rel_err_iqr=[float(np.percentile(rel_s, 25)), float(np.percentile(rel_s, 75))], csa_model_smoothed_rel_err_p90_abs=float(np.percentile(np.abs(rel_s), 90)),
            membrane_d_smoothed_err_mm_median=float(np.median(np.abs(est["d_smooth"][oks] - gt["d"][oks]))), membrane_d_smoothed_err_mm_p90=float(np.percentile(np.abs(est["d_smooth"][oks] - gt["d"][oks]), 90)))
@@ -206,6 +242,8 @@ if P.get("collapse_target", 0) > 0 or P.get("breath_target", 0) > 0:
                                     event_window_frames_seen=int(ev.sum()), event_window_frames_estimated=int(np.isin(seen_k[ev], kk).sum()))
         es = est["csa_model_s"][kk, i0]; oks_ = np.isfinite(es)
         if oks_.any(): res["event_station"].update(est_smoothed_min_csa=float(np.nanmin(es)), est_smoothed_reduction=float(1 - np.nanmin(es) / CSA_gt[0, iz_gt[i0]]), rmse_smoothed=float(np.sqrt(((es[oks_] - gg[oks_]) ** 2).mean())))
+        ev_ = est["csa_model_v"][kk, i0]; okv_ = np.isfinite(ev_)
+        if okv_.any(): res["event_station"].update(est_vel_min_csa=float(np.nanmin(ev_)), est_vel_reduction=float(1 - np.nanmin(ev_) / CSA_gt[0, iz_gt[i0]]), est_vel_min_t=float(t[kk[int(np.nanargmin(ev_))]]), rmse_vel=float(np.sqrt(((ev_[okv_] - gg[okv_]) ** 2).mean())))
 json.dump(res, open(f"{a.out}/m1_result.json", "w"), indent=1); np.savez_compressed(f"{a.out}/m1_grid.npz", zs=zs, t=t, **{f"est_{k}": v for k, v in est.items()}, **{f"gt_{k}": v for k, v in gt.items()})
 for k_, v_ in res.items():
     if k_ != "event_station": print(f"  {k_}: {v_}")
@@ -216,12 +254,12 @@ import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
 fig, axs = plt.subplots(2, 2, figsize=(15, 9)); i0 = int(np.argmin(np.abs(zs - P.get("collapse_z0_mm", 30)))) if P.get("collapse_target", 0) > 0 else nz // 2
 ax = axs[0, 0]; ax.plot(t, CSA_gt[:, iz_gt[i0]], "k-", lw=2, label="truth")
 if rig is not None: ax.axhline(rig[i0], color="tab:red", ls="--", label="rigid map (time-constant)")
-ax.plot(t, est["csa_free"][:, i0], "o", ms=3, color="tab:blue", label=f"M1 model-free (window ±{a.window})"); ax.plot(t, est["csa_model"][:, i0], "s", ms=3, color="tab:green", alpha=.5, label="M1 with anatomical prior (per frame)"); ax.plot(t, est["csa_model_s"][:, i0], "-", lw=2, color="tab:green", label="M1 prior + 3-frame median")
+ax.plot(t, est["csa_free"][:, i0], "o", ms=3, color="tab:blue", label=f"M1 model-free (window ±{a.window})"); ax.plot(t, est["csa_model"][:, i0], "s", ms=3, color="tab:green", alpha=.5, label="M1 with anatomical prior (per frame)"); ax.plot(t, est["csa_model_s"][:, i0], "-", lw=1, color="tab:green", alpha=.6, label="M1 prior + 3-frame median"); ax.plot(t, est["csa_model_v"][:, i0], "-", lw=2, color="tab:purple", label="M1 prior + velocity correction")
 ax.set_xlabel("t (s)"); ax.set_ylabel("CSA (mm²)"); ax.set_title(f"cross-sectional area at z = {zs[i0]:.0f} mm"); ax.legend(fontsize=8); ax.grid(alpha=.3); ax.set_ylim(bottom=0)
-ax = axs[0, 1]; ax.plot(t, gt["d"][:, i0], "k-", lw=2, label="truth"); ax.plot(t, est["d_est"][:, i0], "o", ms=3, color="tab:green", alpha=.5, label="M1 per frame"); ax.plot(t, est["d_smooth"][:, i0], "-", lw=2, color="tab:green", label="M1 3-frame median")
+ax = axs[0, 1]; ax.plot(t, gt["d"][:, i0], "k-", lw=2, label="truth"); ax.plot(t, est["d_est"][:, i0], "o", ms=3, color="tab:green", alpha=.5, label="M1 per frame"); ax.plot(t, est["d_smooth"][:, i0], "-", lw=1, color="tab:green", alpha=.6, label="M1 3-frame median"); ax.plot(t, est["d_vel"][:, i0], "-", lw=2, color="tab:purple", label="M1 velocity-corrected")
 ax.set_xlabel("t (s)"); ax.set_ylabel("membrane displacement d (mm)"); ax.set_title(f"deformation field at z = {zs[i0]:.0f} mm"); ax.legend(fontsize=8); ax.grid(alpha=.3)
-ax = axs[1, 0]; m = ax.imshow(np.where(ok, est["csa_model_s"], np.nan).T, origin="lower", aspect="auto", extent=[t[0], t[-1], zs[0], zs[-1]], cmap="viridis", vmin=0, vmax=np.nanmax(CSA_gt))
-ax.set_xlabel("t (s)"); ax.set_ylabel("z (mm)"); ax.set_title("M1 (prior, smoothed) CSA(z, t) where observed"); plt.colorbar(m, ax=ax, label="mm²")
+ax = axs[1, 0]; m = ax.imshow(np.where(ok, est["csa_model_v"], np.nan).T, origin="lower", aspect="auto", extent=[t[0], t[-1], zs[0], zs[-1]], cmap="viridis", vmin=0, vmax=np.nanmax(CSA_gt))
+ax.set_xlabel("t (s)"); ax.set_ylabel("z (mm)"); ax.set_title("M1 (prior, velocity-corrected) CSA(z, t) where observed"); plt.colorbar(m, ax=ax, label="mm²")
 ax = axs[1, 1]; m = ax.imshow(np.where(ok, gt["csa"], np.nan).T, origin="lower", aspect="auto", extent=[t[0], t[-1], zs[0], zs[-1]], cmap="viridis", vmin=0, vmax=np.nanmax(CSA_gt))
 ax.set_xlabel("t (s)"); ax.set_ylabel("z (mm)"); ax.set_title("truth on the same cells"); plt.colorbar(m, ax=ax, label="mm²")
 fig.suptitle(f"M1 v0 — {os.path.basename(a.synth_run)}: canonical cartilage + per-frame membrane (poses from the rigid model)", fontweight="bold"); fig.tight_layout()

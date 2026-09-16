@@ -50,9 +50,40 @@ recovered; the ramps are not yet. The window-size ablation below addresses this.
 
 Figure: `docs/figures/m1_collapse.png`.
 
-## Results: static, breathing, malacia (window ±2)
+## Results: all four scenarios, symmetric window ±2 (interim table, regenerated at the end of the night)
 
-_(filled in from `runs/m1_*/m1_result.json`)_
+Estimator: prior-based, taper weight > 0.6, 3-frame temporal median, no velocity correction. "Rigid map" is the
+time-constant CSA(z) of the fused rigid cloud evaluated on the same (t, z) cells.
+
+| run | frames | cells | rigid map err median / p90 | M1 prior err median / p90 | M1 model-free err median / p90 | d err mm median / p90 | cartilage dev mm median / p90 | event station (z = 30 mm) |
+|---|---|---|---|---|---|---|---|---|
+| static | 180/180 | 2442 | −0.1 % / 1.5 % | −0.0 % / 0.4 % | −25.6 % / 35.5 % | 0.03 / 0.08 | 0.038 / 0.089 | no event; no false displacement anywhere |
+| breathing 13 % | 180/180 | 2444 | −1.1 % / 12.6 % | −0.6 % / 9.1 % | −24.9 % / 36.1 % | 0.69 / 1.59 | 0.042 / 0.094 | truth 12 %, M1 14 %; RMSE M1 3.1 vs rigid 5.7 mm²; coverage 39/39 |
+| collapse 74 % | 180/180 | 2372 | −1.5 % / 13.2 % | −1.4 % / 17.5 % | −24.1 % / 38.2 % | 0.47 / 1.83 | 0.042 / 0.101 | truth 74 %, M1 86 %; RMSE M1 8.9 vs rigid 14.2 mm²; coverage 14/27 |
+| malacia 47 % | 129/180 | 1302 | +10.8 % / 40.7 % | −13.6 % / 54.9 % | −11.9 % / 33.7 % | 1.99 / 6.85 | 0.038 / 0.096 | truth 35 % (seen), M1 68 %; RMSE M1 15.9 vs rigid 15.1 mm²; coverage 34/40 |
+
+Reading: the canonical part is right everywhere (cartilage within 0.04 mm in every scenario, and the static tube
+shows no false displacement). The deformation part is right when the wall is slow (breathing) or at the instant it
+stops (the collapse peak), and degrades with wall **velocity**: collapse ramps, and malacia throughout. The
+model-free estimator is biased −25 % by the wall's apparent thickness and is kept only as an ablation.
+
+### The velocity bias, and why exact poses are not enough
+
+The degradation is not estimator noise. Comparing each frame's geometric depth map with the true wall surface at
+neighbouring times shows the membrane is placed with an error
+
+    Δx ≈ κ · v_out · Z / c        κ ≈ 0.30 (breathing) and 0.29 (collapse); zero at rest; κ 0.38 → 0.25 from Z = 6 to 14 mm
+
+where v_out is the wall's outward radial velocity, Z its distance ahead of the camera and c the camera speed. This is
+the identifiability problem per pixel: over a ±2-frame window the membrane's lateral image motion (f·v·Δt/Z) is the
+same order as the forward-motion parallax (f·r·c·Δt/Z²), and stereo reads it as depth. It follows that **exact poses
+do not make per-frame depth of a moving wall correct**; the wall's velocity has to enter the depth estimate.
+Correcting from the estimate's own time derivative fails (the per-frame displacement is too noisy to differentiate;
+it made even the static case worse). The remedy queued for the rest of the night uses the sign of the bias: stereo
+with sources only in the past and only in the future gives opposite biases, so their mean is bias-free to first
+order and their difference measures the wall velocity, with no calibration constant (`m1/combine_sides.py`).
+
+Figures: `docs/figures/m1_collapse.png`, `m1_breathing.png`, `m1_malacia.png`.
 
 ## Window-size ablation on collapse (±1, ±2, ±4)
 
@@ -89,4 +120,14 @@ of the wall stayed visible and textured throughout and anchored the cameras; her
 
 So for the real clip the per-frame poses across f1904–1920 come from the motion prior: `interpolate_poses.py` fills
 the gap inside the second model (f1903 → f1921, linear centre, slerp rotation), and M1 runs on that model.
-_(M1 result on this model: pending)_
+
+**Result (honest): the machinery runs end to end on the real clip, but no clean event signal yet.** Stations had to
+be placed along the direction the first cameras look (the scope is nearly stationary during the event, so the path
+tangent there is noise), after which every event frame gets 10–13 stations. At the best station the analysis reports
+seven sectors "moving" and none holding still, with unphysical inward deviations of 1.5–2.7 radii, and the event
+frames fail the coverage gate for CSA. Two reasons, both structural: the event frames are exactly the ones with
+interpolated poses, and the wall region they see is observed by almost no other frame, so its canonical reference is
+weak. Away from the event, per-frame CSA relative to the canonical wall scatters with an IQR of about 0.86–1.20,
+which is the real-video noise floor of ±2-frame stereo. Conclusion for the plan: M3 needs the streaming front end
+(M2) that carries pose and depth through the discontinuity itself; interpolating rigid poses across it is not enough.
+Figure: `docs/figures/m1_real_26V2.png`.

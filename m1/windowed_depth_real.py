@@ -90,6 +90,15 @@ for j in range(0, N, max(1, N // 12)):
     Xc = np.stack([(u[ok] - cx * sx) / (fx * sx) * d_[ok], (v[ok] - cy * sy) / (fy * sy) * d_[ok], d_[ok]], 1); Xw = (Rc2w[j] @ Xc.T).T + C[j]
     dist, idx = tree_path.query(Xw); inside = (idx > 2) & (idx < N - 3); sample_r.append(dist[inside])
 R = float(np.median(np.concatenate(sample_r))); print(f"tube radius estimate R = {R:.4f} scene units; path length {L_path / R:.1f} R")
+# extend the path straight along its end tangents so that stations exist ahead of the first (and last) cameras: on a
+# withdrawal the camera looks at wall the path never reaches
+ext = 4.0 * R; nb_ = min(10, N - 1)
+ax0 = Rc2w[:nb_, :, 2].mean(0); ax0 /= np.linalg.norm(ax0); ax1 = Rc2w[-nb_:, :, 2].mean(0); ax1 /= np.linalg.norm(ax1)       # where the first / last cameras look
+body0 = Cs[min(N - 1, 30)] - Cs[0]; body1 = Cs[max(0, N - 31)] - Cs[-1]                                                         # direction into the path body from each end
+pre = [Cs[0] + ext * ax0] if (ax0 @ body0) < 0.3 * np.linalg.norm(body0) else []                                                # extend only where the view leaves the path
+post = [Cs[-1] + ext * ax1] if (ax1 @ body1) < 0.3 * np.linalg.norm(body1) else []
+Cs = np.vstack(pre + [Cs] + post); seg = np.linalg.norm(np.diff(Cs, axis=0), axis=1); arc = np.concatenate([[0], np.cumsum(seg)]); L_path = arc[-1]
+print(f"path extended at start: {bool(pre)}, at end: {bool(post)} (along the mean viewing axis of the end frames)")
 ds = 0.2 * R; s_st = np.arange(0, L_path, ds); S = np.stack([np.interp(s_st, arc, Cs[:, i]) for i in range(3)], 1)
 T = np.gradient(S, axis=0); T /= np.linalg.norm(T, axis=1, keepdims=True)
 # parallel-transported normal basis
@@ -104,8 +113,10 @@ for j in range(N):
     dep = read_depth(fp); model, W, H, prm = cams[imgs[names[j]][2]]; fx, fy, cx, cy = prm[:4]; h_, w_ = dep.shape; sx, sy = w_ / W, h_ / H
     v, u = np.mgrid[0:h_:2, 0:w_:2]; d_ = dep[::2, ::2]; ok = d_ > 0
     Xc = np.stack([(u[ok] - cx * sx) / (fx * sx) * d_[ok], (v[ok] - cy * sy) / (fy * sy) * d_[ok], d_[ok]], 1); Xw = (Rc2w[j] @ Xc.T).T + C[j]
-    axis = Rc2w[j][:, 2]; ahead = (S - C[j]) @ axis; lateral = np.linalg.norm((S - C[j]) - np.outer(ahead, axis), axis=1)
-    for i in np.where((ahead >= lo_a) & (ahead <= hi_a) & (lateral < 1.5 * R))[0]:
+    axis = Rc2w[j][:, 2]; i_c = int(np.argmin(np.linalg.norm(S - C[j], axis=1)))                      # closest path station to the camera
+    sgn = 1.0 if (T[i_c] @ axis) >= 0 else -1.0                                                          # which way along the path the camera looks
+    along = sgn * (s_st - s_st[i_c]); rel_S = S - C[j]; cosang = (rel_S @ axis) / (np.linalg.norm(rel_S, axis=1) + 1e-9)
+    for i in np.where((along >= lo_a) & (along <= hi_a) & (cosang > 0.5))[0]:                            # ahead along the path, within ~60 deg of the view axis
         rel = Xw - S[i]; along = rel @ T[i]; Q = rel[np.abs(along) < 0.1 * R]
         if len(Q) < 60: continue
         x, y = Q @ N1[i], Q @ N2[i]
