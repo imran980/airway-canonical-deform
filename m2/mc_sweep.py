@@ -24,9 +24,10 @@ import numpy as np, cv2, torch, torch.nn.functional as F
 ap = argparse.ArgumentParser()
 ap.add_argument("workspace"); ap.add_argument("synth_run"); ap.add_argument("--out", required=True)
 ap.add_argument("--deform", default="none", help="none | oracle | path to an m1_grid.npz (uses est_d_smooth)")
-ap.add_argument("--window", type=int, default=2); ap.add_argument("--scale", type=float, default=0.5); ap.add_argument("--planes", type=int, default=128)
+ap.add_argument("--window", type=int, default=2); ap.add_argument("--scale", type=float, default=1.0); ap.add_argument("--planes", type=int, default=128)
 ap.add_argument("--zmin", type=float, default=1.5, help="mm"); ap.add_argument("--zmax", type=float, default=70.0, help="mm")
-ap.add_argument("--ncc-win", type=int, default=5); ap.add_argument("--ncc-min", type=float, default=0.5); ap.add_argument("--min-consistent", type=int, default=2)
+ap.add_argument("--ncc-win", type=int, default=7); ap.add_argument("--ncc-min", type=float, default=0.6); ap.add_argument("--min-consistent", type=int, default=3)
+ap.add_argument("--best-k", type=int, default=3, help="aggregate the mean of the best k source costs per pixel"); ap.add_argument("--median", type=int, default=5, help="spatial median filter (px) on the valid depth; 0 disables")
 ap.add_argument("--gpu", type=int, default=0); ap.add_argument("--frames", default=None, help="lo,hi subset")
 a = ap.parse_args(); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap"); dev = torch.device(f"cuda:{a.gpu}")
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "synthetic")); import deforming_trachea as dt
@@ -128,7 +129,7 @@ for j, k in enumerate(frames):
             n_, _ = ncc(ref, warped); behind = (Xc[2] <= 0).view(H, W) | (u < 0).view(H, W) | (u > W - 1).view(H, W) | (v < 0).view(H, W) | (v > H - 1).view(H, W)
             cost_all[si, pi_] = torch.where(behind, torch.full_like(n_, 2.0), 1.0 - n_)
     # aggregate: mean of the two best sources per pixel/plane
-    k_best = min(2, len(srcs)); agg = torch.topk(cost_all, k_best, dim=0, largest=False).values.mean(0)                     # (planes, H, W)
+    k_best = min(a.best_k, len(srcs)); agg = torch.topk(cost_all, k_best, dim=0, largest=False).values.mean(0)              # (planes, H, W)
     best = agg.argmin(0); cmin = agg.gather(0, best[None])[0]
     # sub-plane parabolic refinement in inverse depth
     bm = (best - 1).clamp(0, a.planes - 1); bp = (best + 1).clamp(0, a.planes - 1); c0, cm, cp = cmin, agg.gather(0, bm[None])[0], agg.gather(0, bp[None])[0]
@@ -138,7 +139,14 @@ for j, k in enumerate(frames):
     per_src_best = cost_all.argmin(1)                                                                                     # (S, H, W)
     consistent = ((per_src_best - best[None]).abs() <= 2).sum(0) >= min(a.min_consistent, len(srcs))
     ok = (cmin < 1.0 - a.ncc_min) & consistent & (best > 0) & (best < a.planes - 1) & (vref > 1e-4)
-    depth = torch.where(ok, depth, torch.zeros_like(depth)); write_depth(f"{a.out}/dense/stereo/depth_maps/f{k:05d}.png.geometric.bin", depth.cpu().numpy()); n_done += 1
+    depth = torch.where(ok, depth, torch.zeros_like(depth))
+    if a.median > 1:                                                                                                       # spatial median over valid neighbours; drops isolated outliers
+        m_ = a.median; pd_ = m_ // 2; dpad = F.pad(depth[None, None], (pd_, pd_, pd_, pd_), mode="replicate")[0, 0]
+        patches = dpad.unfold(0, m_, 1).unfold(1, m_, 1).reshape(H, W, -1); valid = patches > 0
+        nval = valid.sum(-1); patches = torch.where(valid, patches, torch.full_like(patches, float("inf"))); srt, _ = patches.sort(-1)
+        idx = ((nval - 1) // 2).clamp(min=0); med = srt.gather(-1, idx[..., None])[..., 0]
+        keep = ok & (nval >= (m_ * m_) // 3) & ((depth - med).abs() < 0.05 * med); depth = torch.where(keep, depth, torch.zeros_like(depth)); ok = keep
+    write_depth(f"{a.out}/dense/stereo/depth_maps/f{k:05d}.png.geometric.bin", depth.cpu().numpy()); n_done += 1
     if n_done % 20 == 0: print(f"  {n_done} frames, {time.time() - t0:.0f} s, valid {float(ok.float().mean()):.2f}", flush=True)
 print(f"done: {n_done} depth maps in {time.time() - t0:.0f} s -> {a.out}/dense/stereo/depth_maps")
 json.dump(dict(vars(a), scale_mm_per_unit=float(s)), open(f"{a.out}/sweep_params.json", "w"), indent=1)
