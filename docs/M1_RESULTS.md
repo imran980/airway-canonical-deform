@@ -95,6 +95,23 @@ before matching (motion-compensated stereo). That is the M2 design decision this
 that a faster scope helps (the bias scales with 1/c) and that at the instant the wall is still (the collapse peak)
 per-frame stereo is unbiased, which is why the peak was recovered.
 
+### Conservative mode: declare "unknown" when the membrane is under-observed
+
+The velocity bias appears exactly where the moving membrane leaves few surviving depth points. The rigid anterior
+wall in the same slab says how many points a well-reconstructed wall gives, so requiring the membrane's point count
+to reach 30 % of it (`--rel-pts 0.3`) turns the biased cells into declared unknowns:
+
+| scenario | cells answered | M1 prior err median / p90 | d err mm median / p90 |
+|---|---|---|---|
+| static | 94 % | −0.0 % / 0.3 % | 0.02 |
+| breathing 13 % | 66 % | −0.8 % / 8.7 % | 0.63 |
+| collapse 74 % | 82 % (event window 3 of 28) | −0.8 % / 8.0 % | 0.40 / 1.05 |
+| malacia 47 % | 10 % | −2.1 % / 16.7 % | 0.49 |
+
+Where it answers it is right to within about 8 % of area; through the collapse and for almost all of malacia it
+says nothing. That is the honest v0 envelope: a still or slowly moving wall is measured per frame from its own
+depth; a fast-moving wall is not measurable by short-window stereo at this camera speed, and the method knows it.
+
 Figures: `docs/figures/m1_collapse.png`, `m1_breathing.png`, `m1_malacia.png`.
 
 ## Window-size and slab ablations on collapse
