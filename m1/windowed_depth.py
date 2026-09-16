@@ -29,6 +29,7 @@ ap.add_argument("--min-pts", type=int, default=25, help="minimum posterior point
 ap.add_argument("--dense-from", default=None, help="reuse the depth maps of another run's dense dir (implies --skip-stereo)")
 ap.add_argument("--kappa", default="0", help="velocity-bias coefficient kappa(Z) = a + b*Z (mm), calibrated on breathing; '0' disables")
 ap.add_argument("--vel-iters", type=int, default=2)
+ap.add_argument("--slab", type=float, default=1.0, help="half-thickness of the station slab in mm")
 ap.add_argument("--sources", default="sym", choices=["sym", "past", "future"], help="stereo sources for frame k: k-w..k+w (sym), k-w..k-1 (past) or k+1..k+w (future)")
 a = ap.parse_args(); os.makedirs(a.out, exist_ok=True); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap"); MIN_PTS = a.min_pts
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "synthetic")); import deforming_trachea as dt
@@ -148,7 +149,7 @@ for j, (k, n) in enumerate(zip(frames, names)):
     n_used += 1
     for i, zz in enumerate(zs):
         if not (zc + lo_ahead <= zz <= zc + hi_ahead): continue
-        Q = Pmm[np.abs(Pmm[:, 2] - zz) < 0.5]
+        Q = Pmm[np.abs(Pmm[:, 2] - zz) < a.slab]
         if len(Q) < 60: continue
         x, y = Q[:, 0], Q[:, 1]
         from scipy.spatial import cKDTree
