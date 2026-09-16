@@ -56,6 +56,10 @@ synthetic/score_rigid.py         scores a rigid airway-recon-colmap workspace ag
                                  (poses via Sim(3), dense cloud in mm, pipeline's own %obstruction)
 synthetic/pose_diag.py           alignment-free pose diagnostics (when/where a rigid model went wrong)
 synthetic/summarize_rigid.py     runs score_rigid + pose_diag over the scenarios and prints one results table
+m1/windowed_depth.py             M1 v0 on a synthetic run: per-frame ±w stereo, canonical cartilage, membrane displacement,
+                                 CSA(z,t) and rigid-map baseline against truth; interpolate_poses.py, combine_sides.py,
+                                 summarize_m1.py; real_sfm_relaxed.py + windowed_depth_real.py for real clips
+docs/M1_RESULTS.md               M1 results, ablations, the velocity-bias analysis, 26-V2 status
 data/manifest.json               the real testbed cases and where their videos / calibrations / clouds live
 docs/PLAN.md                     milestones and what "done" means for each
 docs/M0_VERIFICATION.md          how M0 is verified, and the results
@@ -76,7 +80,16 @@ Calibration, frame decoding and the measurement gates are reused from `bronchotr
       On the final data the unchanged rigid pipeline recovers the static tube's cameras to 5 µm and its calibre to
       0.08 mm, keeps exact poses through a 76 % posterior collapse, and reports that collapsed airway as a normal
       tube (14 % obstruction): the rigid baseline and its failure are both quantified. See `docs/M0_VERIFICATION.md`
-- [ ] identifiability experiment on the synthetic tube (rigid-only vs canonical+deformation)
+- [x] M1 v0, identifiability on the synthetic tube (`m1/`, results in `docs/M1_RESULTS.md`). Poses from rigid
+      SfM are exact whenever a rigid sector is in view (0.005–0.06 mm; 0.82 mm and 0.6° once the whole wall moves,
+      confirming the identifiability claim). Per-frame short-window depth with the posterior-translation prior
+      recovers the canonical cartilage to 0.04 mm in every scenario, the breathing amplitude, and the collapse at
+      the right instant (the rigid map reads a normal tube), and flags the prior violation (0.51 mm cartilage
+      deviation on uniform contraction). Its limit is now measured, not guessed: per-frame stereo of a moving wall
+      is biased by κ·v·Z/c (κ ≈ 0.3), even in stereo source side, so exact poses are not enough and the wall's
+      velocity must enter the depth estimate. That is the M2 design decision.
+- [ ] M2: motion-compensated (deformation-aware) streaming depth; the 26-V2 collapse frames register in no rigid
+      model (checked down to 8 inliers / 5 %), so M2 must also carry pose through the discontinuity
 - [ ] streaming front end (pose + depth per frame) on 2-V2 static control
 - [ ] canonical/deformation split on 26-V2 across the collapse
 - [ ] porcine 4D-CT comparison
