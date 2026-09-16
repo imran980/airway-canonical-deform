@@ -77,4 +77,35 @@ NCC) is kept if it beats "no motion" by a margin, and the final depth is swept w
 frame and station, a velocity measured from the images that can be compared with the true d(d)/dt directly, and a
 depth map free of the bias to the extent the velocity is right.
 
-_(running)_
+**Result (collapse, breathing, malacia; 13 hypotheses, search at half resolution, final sweep at full):**
+
+| scenario | plain stereo d err (median / p90 mm) | velocity search | true motion (ceiling) | velocity decided | corr(v*, truth) | sign right when moving |
+|---|---|---|---|---|---|---|
+| breathing 13 % | 0.68 / 1.58 | **0.19 / 1.91** | 0.06 / 0.16 | 27 % of cells | 0.24 (0.42 at 4–8 mm ahead) | 70 % |
+| collapse 74 % | 0.44 / 1.67 | **0.27 / 1.46** | 0.07 / 0.26 | 29 % | 0.12 (0.37 at 4–8 mm) | 55 % |
+| malacia 47 % | 2.63 / 2.90 | 2.51 / 2.91 | 0.12 / 0.50 | 14 % | 0.49 (0.73 at 4–8 mm) | 71 % |
+
+Speed dependence of the chosen velocity (collapse): magnitude ratio |v*| / |v| is 0.95 for true speeds of 1–3 mm/s,
+0.76 for 3–6, 0.58 for 6–12 and 0.06 above 12 mm/s. Breathing-scale motion (≤ 3 mm/s) is found from the images with
+the right sign and size at the near stations, and the displacement error drops 3.5-fold; the fast collapse ramps and
+malacia are not found, the search falls back to "no motion", and nothing is gained there. Two reasons: at high
+speed the membrane's texture is foreshortened and partly occluded, so few pixels survive to score any hypothesis
+(decided fraction 14–29 %); and the hypothesis grid is coarse while the mean-NCC criterion separates neighbouring
+hypotheses by margins near the noise.
+
+## Where M2 stands and what comes next
+
+Settled:
+- the velocity bias is the mechanism, and motion compensation removes it completely when the motion is known,
+  in every scenario including the fastest (malacia 2.63 → 0.12 mm);
+- the wall velocity cannot be recovered by differentiating the displacement estimate, but it can be recovered from
+  the images for slow motion (≤ 3 mm/s) by hypothesis search inside the stereo, giving a 3.5-fold gain on breathing;
+- the cartilage stays canonical (0.06–0.07 mm) in every M2 configuration: compensation never disturbs the rigid part.
+
+Open, and the next step: estimating fast wall velocity from the images. Candidates, in order of expected payoff:
+continuous velocity optimisation per station with a temporal smoothness prior across frames (the wall velocity is a
+smooth function of time; per-frame independent picks are what fail), scoring by the number of pixels made consistent
+rather than mean NCC, and a coarse-to-fine schedule in velocity. The streaming pose front end for real
+discontinuities (26-V2) is the other half of M2 and is untouched so far.
+
+Code: `m2/mc_sweep.py`, `m2/mc_sweep_vsearch.py`, `m2/iterate.sh`, `m2/eval_velocity.py`.
