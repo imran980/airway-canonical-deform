@@ -97,11 +97,57 @@ What the outcome means:
   tube within the paper's CT-validated error (about 1 mm). If it does, the renders, poses, intrinsics and geometry
   are mutually consistent and the rigid baseline is confirmed to work on this data. If it does not, either the
   synthetic data is wrong or the rendering is too poor for real features, and nothing downstream can be trusted.
-- **Collapse.** A rigid model cannot represent the 75 % transient: either the model fragments around t0, or the
-  frames near the event register with a larger pose residual and the moving membrane is smeared into the dense
-  cloud. Whichever happens is recorded, because it is the failure the canonical + deformation method (M1) has to
-  fix and the baseline number M1 will be compared against.
+- **Collapse.** A rigid model cannot represent the 75 % transient. What actually happens (see Results): the
+  cameras stay exact, because the rigid cartilage half of the wall anchors them even while the other half moves
+  8.8 mm; the moving membrane is fused into the map as a smeared shell pulled into the lumen in the event zone;
+  and the pipeline's own gated measurement reads a normal tube, so the event is simply invisible. That is the
+  baseline the canonical + deformation method (M1) has to beat: same poses, but a membrane that is where it was
+  at each instant and a CSA(t) that shows the event.
+- **Breathing and malacia.** Periodic wall motion over the whole clip (12 % and 45 % area change on the
+  posterior sector), no transient. They bracket what a rigid map does to a continuously moving wall.
 
-## Results
+## Results (2026-09-15, final generator, pinhole intrinsics, unchanged `airway-recon-colmap` pipeline)
 
-_(filled in from the run below)_
+All four scenarios: 180 frames at 30 fps, 6 s, 60 mm tube of 9.8 mm equivalent diameter, camera advancing 6 mm/s
+with 0.35 mm lateral jitter and 2 deg tilt, 26-V2 focal length and principal point, no distortion.
+
+| scenario | wall motion | registered | reproj | camera centre RMSE | viewing axis err | relative-rotation err (median / max) | dense wall vs truth | calibre D_CE error | pipeline's own %obstruction | truth |
+|---|---|---|---|---|---|---|---|---|---|---|
+| static | none | 180/180, 1 model | 1.29 px | 0.005 mm (max 0.016) | 0.01 deg | 0.01 / 0.02 deg | posterior −4.95, anterior +4.78 (truth ±5.00); 0 % of points inside the lumen | 0.08 mm (bias −0.05) | 5 %, CV 0.02: normal tube | ring corrugation 9 % |
+| collapse | 12 % breathing + 76 % transient at 3 s, posterior half | 180/180, 1 model | 1.39 px | 0.063 mm (max 0.157); 0.021 mm during the event | 0.12 deg | 0.04 / 0.11 deg | far from event: median offset −0.006 mm (IQR −0.06 … +0.11); in the event zone: cartilage +0.01 mm, membrane −0.32 mm with 0.89 mm IQR and 20 % of membrane points > 1 mm inside the lumen | 0.47 mm (bias −0.46, all from the event zone) | 14 %, CV 0.05: "measurable tube, within noise floor" | 76 % event |
+| breathing | 13 % periodic, posterior 120 deg sector, membrane amplitude 1.8 mm | 180/180, 1 model | 1.35 px | 0.018 mm (max 0.044) | 0.02 deg | 0.02 / 0.06 deg | cartilage −0.003 mm; membrane median −0.07 mm but 0.91 mm IQR, 21 % of membrane points > 1 mm inside the lumen, posterior midline at x = −3.3 (truth −5.0) | 0.47 mm (bias −0.42) | 13.8 %, CV 0.05: normal tube | 13 % twice per breath; time-mean area 94 % of canonical |
+| malacia | 47 % periodic, posterior 120 deg sector, membrane amplitude 6.9 mm | 129/180 in the main model: the two breathing peaks (f36–58, f122–149; 35–45 % reduction) are dropped, one of them re-appears as a 22-frame fragment at a nonsense scale | 1.29 px | 0.031 mm (max 0.069) on the 129 | 0.05 deg | 0.01 / 0.07 deg | cartilage +0.004 mm; membrane sector holds 8 % of points for 33 % of the circumference (mostly missing) and its midline is smeared to x = −3.3 (truth −5.0) | 0.52 mm (bias −0.21) | 8.6 %, CV 0.03: normal tube | 47 % twice per breath; time-mean area 78 % of canonical |
+
+What this establishes:
+
+1. **M0 is consistent end to end.** A pipeline that knows nothing about the generator recovers the static tube's
+   camera path to 5 µm and its calibre to 0.08 mm from the rendered video alone. Renders, poses, intrinsics and
+   geometry agree; the ground truth can be trusted for M1.
+2. **The rigid baseline is far stronger than the patient data suggested.** The CT-validated calibre error on
+   patient videos is about 1 mm; on a perfect synthetic capture it is 0.08 mm. The patient error is capture and
+   real-world effects, not the reconstruction.
+3. **Rigid SfM poses survive a 76 % wall collapse.** The cartilage half of the wall anchors the cameras; the frames
+   during the event are the best-registered of the clip. Any M1 method must at least match these poses.
+4. **What the rigid map gets wrong is the deforming wall, and it gets it wrong silently.** The membrane is fused as a
+   smeared shell pulled into the lumen (a fifth of its points more than 1 mm inside), the cartilage next to it is
+   exact, and the pipeline's own gated measurement reports a normal tube. A clinician reading the rigid output
+   would never know the airway closed by three quarters. This is the failure M1 exists to fix, and the numbers
+   above are the baseline it is compared against.
+
+Machine-generated summary (`python synthetic/summarize_rigid.py static collapse breathing malacia`, also written to
+`runs/rigid_summary.json`; D_CE numbers are whole-tube means and so include the smeared membrane where there is one):
+
+| scenario | wall motion | models | registered | reproj px | centre RMSE mm | axis err deg | rel-rot err median / max deg | straightness est vs GT | D_CE err mm | D_CE bias mm | 1-mm slabs | pipeline %obstruction | GT %obstruction |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| static | none | 1 | 180/180 | 1.29 | 0.01 | 0.0 | 0.01 / 0.02 | 0.0132 vs 0.0132 | 0.08 | −0.05 | 47/58 | 5 % (48 st., CV 0.02) | 9 % |
+| collapse | 75 % collapse @ 3 s | 1 | 180/180 | 1.39 | 0.06 | 0.1 | 0.04 / 0.11 | 0.0133 vs 0.0132 | 0.47 | −0.46 | 47/58 | 14 % (48 st., CV 0.05) | 7 % static / 76 % at event |
+| breathing | 12 % periodic | 1 | 180/180 | 1.35 | 0.02 | 0.0 | 0.02 / 0.06 | 0.0133 vs 0.0132 | 0.47 | −0.42 | 47/58 | 14 % (48 st., CV 0.05) | 9 % |
+| malacia | 45 % periodic | 2 | 129/180 | 1.29 | 0.03 | 0.1 | 0.01 / 0.07 | 0.0135 vs 0.0136 | 0.52 | −0.21 | 47/58 | 9 % (48 st., CV 0.03) | 9 % |
+
+Earlier runs on the same scenarios, kept for the record in `runs/old_rigid_*`: with the v0 periodic texture the
+static model rolled 45 deg (see bug 2); with the real scope's distortion coefficients applied to the pinhole
+renders the dense wall sat 0.4–0.6 mm inside the truth (bug 3). Neither survives the fixes.
+
+Figures: `docs/figures/m0_rigid_static.png`, `docs/figures/m0_rigid_collapse.png` (registered frames, pose
+residual against time with the event window marked, dense CSA(z) against the canonical and event-minimum truth),
+`docs/figures/m0_verify_collapse.png` (the ground-truth verification figure).

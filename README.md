@@ -55,6 +55,7 @@ synthetic/verify_m0.py           checks the stored ground truth from outside the
 synthetic/score_rigid.py         scores a rigid airway-recon-colmap workspace against the ground truth
                                  (poses via Sim(3), dense cloud in mm, pipeline's own %obstruction)
 synthetic/pose_diag.py           alignment-free pose diagnostics (when/where a rigid model went wrong)
+synthetic/summarize_rigid.py     runs score_rigid + pose_diag over the scenarios and prints one results table
 data/manifest.json               the real testbed cases and where their videos / calibrations / clouds live
 docs/PLAN.md                     milestones and what "done" means for each
 docs/M0_VERIFICATION.md          how M0 is verified, and the results
@@ -69,8 +70,12 @@ Calibration, frame decoding and the measurement gates are reused from `bronchotr
 - [x] problem statement and prior written down
 - [x] synthetic generator v0 (geometry, deformation, poses, CSA ground truth; renders when an offscreen
       GL context is available)
-- [x] M0 verified three ways (unit tests, external ground-truth checks, rigid-pipeline cross-check):
-      see `docs/M0_VERIFICATION.md`
+- [x] M0 verified three ways (unit tests, external ground-truth checks, rigid-pipeline cross-check), after
+      three catches the checks made: an anterior-wall clipping bug, a helical texture symmetry that let rigid SfM
+      register a rolled copy of the tube, and a pinhole-vs-distorted intrinsics mismatch in the cross-check.
+      On the final data the unchanged rigid pipeline recovers the static tube's cameras to 5 µm and its calibre to
+      0.08 mm, keeps exact poses through a 76 % posterior collapse, and reports that collapsed airway as a normal
+      tube (14 % obstruction): the rigid baseline and its failure are both quantified. See `docs/M0_VERIFICATION.md`
 - [ ] identifiability experiment on the synthetic tube (rigid-only vs canonical+deformation)
 - [ ] streaming front end (pose + depth per frame) on 2-V2 static control
 - [ ] canonical/deformation split on 26-V2 across the collapse

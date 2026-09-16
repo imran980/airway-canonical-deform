@@ -20,7 +20,7 @@ for sc in sys.argv[1:]:
     rows.append(dict(scenario=sc, event=f"{P['collapse_target']:.0%} collapse @ {P['collapse_t0_s']:.0f}s" if P.get("collapse_target", 0) > 0 else (f"{P['breath_target']:.0%} periodic" if P.get("breath_target", 0) > 0 else "none"),
                      n_models=len(S["models"]), registered=f"{m['n_registered']}/{len(g['t'])}" if m else "0", reproj=None,
                      centre_rmse=f"{m['centre_rmse_mm']:.2f}" if m else "-", axis_med=f"{m['axis_err_deg_median']:.1f}" if m else "-",
-                     relrot=f"{relrot.group(1)} / {relrot.group(2)} (from {relrot.group(3)})" if relrot else "-", straight=f"{straight.group(1)} vs {straight.group(2)}" if straight else "-",
+                     relrot=(f"{relrot.group(1)} / {relrot.group(2)}" + (f" (wrong from {relrot.group(3)})" if relrot.group(3) != "none" else "")) if relrot else "-", straight=f"{straight.group(1)} vs {straight.group(2)}" if straight else "-",
                      calibre_err=f"{d['calibre_err_mm_mean']:.2f}" if d.get("calibre_err_mm_mean") is not None else "-", calibre_bias=f"{d['calibre_bias_mm']:+.2f}" if d.get("calibre_bias_mm") is not None else "-",
                      slabs=f"{d.get('n_slabs_measured', 0)}/{d.get('n_slabs', 0)}" if d else "-",
                      pipe_pct=f"{pm['pct_obstruction']:.0f}% ({pm['n_accepted']} st., CV {pm['cv']:.2f})" if pm.get("measurable") else (f"not measurable ({pm.get('n_accepted', 0)} st.)" if pm else "-"),
