@@ -1,6 +1,6 @@
 # M1: identifiability on the synthetic tube (rigid-only vs canonical + deformation)
 
-_Status: written during the night of 2026-09-15/16; results sections are filled in as runs complete._
+_Written during the night of 2026-09-15/16. All numbers are from the final estimator unless a section says otherwise._
 
 ## What M0 told us to build
 
@@ -33,37 +33,42 @@ time-constant CSA(z) on the same cells.
 Code: `m1/windowed_depth.py` (synthetic, with truth), `m1/interpolate_poses.py` (poses for frames rigid SfM dropped),
 `m1/real_sfm_relaxed.py` and `m1/windowed_depth_real.py` (real video, no truth).
 
-## Results: collapse (76 % transient at 3 s, plus 13 % breathing), window ±2
+## Results: collapse (74 % transient at 3 s, plus 13 % breathing), window ±2, final estimator
 
 | quantity | rigid map | M1 prior (+3-frame median) | truth |
 |---|---|---|---|
-| CSA(z,t) relative error, all observed cells | median −1.6 %, p90 12.7 % | median −0.2 %, IQR −4.6 … +2.3 %, p90 14.3 % | — |
-| membrane displacement d(z,t) | not represented | 0.42 mm median error, p90 1.5 mm | up to 8.4 mm |
-| cartilage radius (rigidity check) | — | 0.04 mm median deviation, p90 0.10 mm | 0 |
-| event station z = 30 mm: minimum CSA | 68 mm² constant (0 % event) | 18.6 mm² = 75.3 % reduction, at t = 3.0 s | 19.5 mm² = 74.2 % at t = 2.97 s |
-| event station: RMSE over the frames with an estimate | 12.0 mm² | 2.8 mm² | — |
-| event station: frames with an estimate inside the ±3σ event window | — | 8 of 27 | — |
+| CSA(z,t) relative error, all observed cells | median −1.4 %, p90 13.8 % | median −1.5 %, IQR −5 … +2 %, p90 20.7 % | — |
+| membrane displacement d(z,t) | not represented | 0.48 mm median error, p90 1.9 mm | up to 8.4 mm |
+| cartilage radius (rigidity check) | — | 0.06 mm median deviation, p90 0.12 mm | 0 |
+| event station z = 30 mm: minimum CSA | 68 mm² constant (0 % event) | 88 % reduction at t = 3.0–3.1 s (truth 74 %: near closure a +0.4 mm displacement error costs 14 % of area) | 19.5 mm² = 74 % at t = 2.97 s |
+| event station: RMSE over the frames with an estimate | 16.8 mm² | 9.9 mm² (window ±4: 4.5 mm², reading 59 %) | — |
+| event station: frames with an estimate inside the ±3σ event window | — | 21 of 28 | — |
 
-The last row is the honest caveat: during the ramps, when the membrane moves fastest (≈ 0.6 mm per frame), the
-±2-frame stereo loses the moving surface and the estimator reports "unknown". The peak and the recovery are
-recovered; the ramps are not yet. The window-size ablation below addresses this.
+The event is found at the right instant and its depth is right to within the area's sensitivity near closure; the
+ramps, when the membrane moves fastest, are partly missing and partly biased. The next two sections quantify why.
 
 Figure: `docs/figures/m1_collapse.png`.
 
-## Results: all four scenarios, symmetric window ±2 (interim table, regenerated at the end of the night)
+## Results: all scenarios and ablations, final estimator (slab ±1.0 mm, taper > 0.6, 3-frame median)
 
-Estimator: prior-based, taper weight > 0.6, 3-frame temporal median, no velocity correction. "Rigid map" is the
-time-constant CSA(z) of the fused rigid cloud evaluated on the same (t, z) cells.
+"Rigid map" is the time-constant CSA(z) of the fused rigid cloud evaluated on the same (t, z) cells. The
+model-free estimator is biased −30 % by the wall's apparent thickness and is kept only as an ablation.
 
-| run | frames | cells | rigid map err median / p90 | M1 prior err median / p90 | M1 model-free err median / p90 | d err mm median / p90 | cartilage dev mm median / p90 | event station (z = 30 mm) |
+| run | window | frames | cells answered | rigid map err median / p90 | M1 prior err median / p90 | d err mm median / p90 | cartilage dev mm median / p90 | event station z = 30 mm |
 |---|---|---|---|---|---|---|---|---|
-| static | 180/180 | 2442 | −0.1 % / 1.5 % | −0.0 % / 0.4 % | −25.6 % / 35.5 % | 0.03 / 0.08 | 0.038 / 0.089 | no event; no false displacement anywhere |
-| breathing 13 % | 180/180 | 2444 | −1.1 % / 12.6 % | −0.6 % / 9.1 % | −24.9 % / 36.1 % | 0.69 / 1.59 | 0.042 / 0.094 | truth 12 %, M1 14 %; RMSE M1 3.1 vs rigid 5.7 mm²; coverage 39/39 |
-| collapse 74 % | 180/180 | 2372 | −1.5 % / 13.2 % | −1.4 % / 17.5 % | −24.1 % / 38.2 % | 0.47 / 1.83 | 0.042 / 0.101 | truth 74 %, M1 86 %; RMSE M1 8.9 vs rigid 14.2 mm²; coverage 14/27 |
-| malacia 47 % | 129/180 | 1302 | +10.8 % / 40.7 % | −13.6 % / 54.9 % | −11.9 % / 33.7 % | 1.99 / 6.85 | 0.038 / 0.096 | truth 35 % (seen), M1 68 %; RMSE M1 15.9 vs rigid 15.1 mm²; coverage 34/40 |
+| static | ±2 | 180/180 | 100 % | −0.1 % / 1.5 % | −0.0 % / 0.4 % | 0.02 / 0.07 | 0.055 / 0.106 | no event; no false displacement |
+| breathing 13 % | ±2 | 180/180 | 100 % | −1.2 % / 12.7 % | −0.6 % / 9.0 % | 0.68 / 1.58 | 0.057 / 0.109 | truth 12 %, M1 14 %; RMSE 3.1 vs rigid 5.6; coverage 39/39 |
+| collapse 74 % | ±2 | 180/180 | 98 % | −1.4 % / 13.8 % | −1.5 % / 20.7 % | 0.48 / 1.88 | 0.057 / 0.117 | truth 74 %, M1 88 %; RMSE 9.9 vs rigid 16.8; coverage 21/28 |
+| collapse 74 % | ±1 | 180/180 | 98 % | −1.5 % / 13.1 % | −1.9 % / 35.1 % | 0.40 / 2.89 | 0.065 / 0.155 | peak not observed; coverage 10/19 |
+| collapse 74 % | ±4 | 180/180 | 98 % | −1.4 % / 13.5 % | −0.8 % / 13.6 % | 0.54 / 1.46 | 0.046 / 0.101 | truth 75 %, M1 59 %; RMSE 4.5 vs rigid 16.5; coverage 16/29 |
+| collapse, past-only sources | ±2 | 180/180 | 99 % | −1.5 % / 13.1 % | −3.0 % / 60.1 % | 0.59 / 4.20 | 0.063 / 0.143 | M1 89 %; RMSE 23.1 |
+| collapse, future-only sources | ±2 | 180/180 | 98 % | −1.4 % / 13.2 % | −3.1 % / 45.7 % | 0.49 / 3.30 | 0.063 / 0.146 | M1 88 %; RMSE 17.1 |
+| malacia 47 % | ±2 | 129/180 | 88 % | +12.4 % / 45.6 % | −14.1 % / 55.5 % | 2.09 / 7.00 | 0.053 / 0.116 | truth 35 % seen, M1 68 %; RMSE 19.1 vs rigid 15.1 |
+| malacia, interpolated poses | ±2 | 180/180 | 91 % | — | −14.5 % / 55.9 % | 2.18 / 7.29 | 0.103 / 0.201 | truth 44 %, M1 69 %; coverage 37/37 |
+| **uniform 30 % (prior violated)** | ±2 | 180/180 | 100 % | −4.9 % / 40.7 % | −18.5 % / 92.2 % | 0.69 / 3.39 | **0.511 / 1.076** | M1 wrong by design; the cartilage check flags it |
 
-Reading: the canonical part is right everywhere (cartilage within 0.04 mm in every scenario, and the static tube
-shows no false displacement). The deformation part is right when the wall is slow (breathing) or at the instant it
+Reading: the canonical part is right everywhere (cartilage within 0.06 mm in every prior-satisfying scenario, and
+the static tube shows no false displacement). The deformation part is right when the wall is slow (breathing) or at the instant it
 stops (the collapse peak), and degrades with wall **velocity**: collapse ramps, and malacia throughout. The
 model-free estimator is biased −25 % by the wall's apparent thickness and is kept only as an ablation.
 
