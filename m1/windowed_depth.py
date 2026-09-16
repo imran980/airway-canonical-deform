@@ -197,6 +197,9 @@ if P.get("collapse_target", 0) > 0 or P.get("breath_target", 0) > 0:
                                     est_model_reduction=float(1 - em.min() / CSA_gt[0, iz_gt[i0]]), rmse_free=float(np.sqrt(((e - gg) ** 2).mean())), rmse_model=float(np.sqrt(((em - gg) ** 2).mean())),
                                     rigid_csa=float(rig[i0]) if rig is not None and np.isfinite(rig[i0]) else None,
                                     rmse_rigid=float(np.sqrt(((rig[i0] - gg) ** 2).mean())) if rig is not None and np.isfinite(rig[i0]) else None)
+        seen_k = np.where(seen[:, i0])[0]; ev = np.abs(t[seen_k] - (P["collapse_t0_s"] if P.get("collapse_target", 0) > 0 else t[seen_k].mean())) < 3 * P.get("collapse_sigma_s", 0.5)
+        res["event_station"].update(frames_seen=int(len(seen_k)), frames_estimated=int(len(kk)), coverage=float(len(kk) / max(len(seen_k), 1)),
+                                    event_window_frames_seen=int(ev.sum()), event_window_frames_estimated=int(np.isin(seen_k[ev], kk).sum()))
         es = est["csa_model_s"][kk, i0]; oks_ = np.isfinite(es)
         if oks_.any(): res["event_station"].update(est_smoothed_min_csa=float(np.nanmin(es)), est_smoothed_reduction=float(1 - np.nanmin(es) / CSA_gt[0, iz_gt[i0]]), rmse_smoothed=float(np.sqrt(((es[oks_] - gg[oks_]) ** 2).mean())))
 json.dump(res, open(f"{a.out}/m1_result.json", "w"), indent=1); np.savez_compressed(f"{a.out}/m1_grid.npz", zs=zs, t=t, **{f"est_{k}": v for k, v in est.items()}, **{f"gt_{k}": v for k, v in gt.items()})
