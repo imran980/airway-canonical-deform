@@ -75,13 +75,25 @@ neighbouring times shows the membrane is placed with an error
     Δx ≈ κ · v_out · Z / c        κ ≈ 0.30 (breathing) and 0.29 (collapse); zero at rest; κ 0.38 → 0.25 from Z = 6 to 14 mm
 
 where v_out is the wall's outward radial velocity, Z its distance ahead of the camera and c the camera speed. This is
-the identifiability problem per pixel: over a ±2-frame window the membrane's lateral image motion (f·v·Δt/Z) is the
-same order as the forward-motion parallax (f·r·c·Δt/Z²), and stereo reads it as depth. It follows that **exact poses
-do not make per-frame depth of a moving wall correct**; the wall's velocity has to enter the depth estimate.
-Correcting from the estimate's own time derivative fails (the per-frame displacement is too noisy to differentiate;
-it made even the static case worse). The remedy queued for the rest of the night uses the sign of the bias: stereo
-with sources only in the past and only in the future gives opposite biases, so their mean is bias-free to first
-order and their difference measures the wall velocity, with no calibration constant (`m1/combine_sides.py`).
+the identifiability problem per pixel. As the camera advances, forward-motion parallax moves wall texture radially
+outward in the image in later frames and inward in earlier ones; a membrane moving outward does exactly the same on
+both sides. Stereo cannot tell the two apart, so the wall's image motion is read as extra (or missing) parallax:
+outward motion looks like a closer, more displaced wall, inward motion like a farther, less displaced one. The
+relative size of the effect is (v·Δt/Z)/(r·c·Δt/Z²) = v·Z/(r·c), which is the law measured above. Two consequences
+were checked directly:
+
+- it is **even in source side**: stereo with sources only in the past and only in the future gives the same sign
+  of error (collapse, |v_out| > 6 mm/s: +4.6 mm past-only, +3.8 mm future-only, +2.4 mm symmetric), so pairing the
+  two sides does not cancel it (`m1/combine_sides.py`, tried: 0.50 mm median error against 0.48 for the symmetric
+  window, velocity proxy uncorrelated with the truth);
+- correcting from the estimate's own time derivative fails: the per-frame displacement is too noisy to
+  differentiate, and the correction made even the static case worse (0.03 → 0.41 mm).
+
+It follows that **exact poses do not make per-frame depth of a moving wall correct**, and that the wall's velocity
+must enter the depth estimate itself: sources have to be warped by the hypothesised deformation between frames
+before matching (motion-compensated stereo). That is the M2 design decision this experiment settles. It also says
+that a faster scope helps (the bias scales with 1/c) and that at the instant the wall is still (the collapse peak)
+per-frame stereo is unbiased, which is why the peak was recovered.
 
 Figures: `docs/figures/m1_collapse.png`, `m1_breathing.png`, `m1_malacia.png`.
 

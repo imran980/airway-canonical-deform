@@ -30,8 +30,9 @@ ap.add_argument("--dense-from", default=None, help="reuse the depth maps of anot
 ap.add_argument("--kappa", default="0", help="velocity-bias coefficient kappa(Z) = a + b*Z (mm), calibrated on breathing; '0' disables")
 ap.add_argument("--vel-iters", type=int, default=2)
 ap.add_argument("--slab", type=float, default=1.0, help="half-thickness of the station slab in mm")
+ap.add_argument("--rel-pts", type=float, default=0.0, help="membrane points must be at least this fraction of the anterior (rigid) sector count, else unknown")
 ap.add_argument("--sources", default="sym", choices=["sym", "past", "future"], help="stereo sources for frame k: k-w..k+w (sym), k-w..k-1 (past) or k+1..k+w (future)")
-a = ap.parse_args(); os.makedirs(a.out, exist_ok=True); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap"); MIN_PTS = a.min_pts
+a = ap.parse_args(); os.makedirs(a.out, exist_ok=True); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap"); MIN_PTS = a.min_pts; REL_PTS = a.rel_pts
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "synthetic")); import deforming_trachea as dt
 
 g = np.load(f"{a.synth_run}/gt.npz"); P = json.loads(str(g["params"])); p = dt.Params(**P)
@@ -125,7 +126,7 @@ def free_area(x, y, delta=0.2):
     return float((lab == L).sum() * 0.01) if L > 0 else np.nan
 
 
-def membrane_d(x, y, r_can):
+def membrane_d(x, y, r_can, n_ref=None):
     """declared prior: the posterior sector translates along +x with the known taper w(theta0). A point keeps its y, so
     its rest position on the canonical wall is (-xa, y) with xa = sqrt(r^2 - y^2) and rest angle theta0; it predicts
     d = (x + xa) / w(theta0). Robust median over all posterior-side points with w > 0.3 that are not on the anterior
@@ -134,7 +135,8 @@ def membrane_d(x, y, r_can):
     inside = np.abs(y) < 0.85 * r_can; xa = np.sqrt(np.maximum(r_can ** 2 - y[inside] ** 2, 0)); xi, yi = x[inside], y[inside]
     th0 = np.mod(np.arctan2(yi, -xa), 2 * np.pi); w0 = np.interp(th0, th, w_memb)
     use = (w0 > 0.6) & (xi < xa - 0.8) & (xi + xa > -1.0)
-    return float(np.median((xi[use] + xa[use]) / w0[use])) if use.sum() >= MIN_PTS else np.nan
+    enough = use.sum() >= MIN_PTS and (n_ref is None or use.sum() >= REL_PTS * n_ref)   # the rigid anterior wall says how many points a well-reconstructed wall gives here
+    return float(np.median((xi[use] + xa[use]) / w0[use])) if enough else np.nan
 
 
 depth_dir = f"{dense}/stereo/depth_maps"; n_used = 0; zc_arr = np.full(N, np.nan)
@@ -161,7 +163,7 @@ for j, (k, n) in enumerate(zip(frames, names)):
         r_memb0 = float(rc[w_memb > 0.9].mean())                                          # canonical rest radius of the membrane sector (no rings there)
         ant = np.abs(ang) < np.radians(40); est["r_cart_dev"][k, i] = float(np.median(np.hypot(x[ant], y[ant])) - r_can) if ant.sum() >= 20 else np.nan
         est["csa_free"][k, i] = free_area(x, y)
-        dm = membrane_d(x, y, r_memb0); est["d_est"][k, i] = dm
+        dm = membrane_d(x, y, r_memb0, n_ref=int(ant.sum())); est["d_est"][k, i] = dm
         if np.isfinite(dm):
             Xm, Ym = dt.deform_xy(r0[iz_gt[i]:iz_gt[i] + 1], th, (max(dm, 0.0) * w_memb)[None, :], p); est["csa_model"][k, i] = float(dt.csa_from_xy(Xm, Ym)[0])
         gt["csa"][k, i] = CSA_gt[k, iz_gt[i]]; gt["d"][k, i] = float(D[k, iz_gt[i], memb_mid].max())
