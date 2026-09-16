@@ -85,20 +85,51 @@ order and their difference measures the wall velocity, with no calibration const
 
 Figures: `docs/figures/m1_collapse.png`, `m1_breathing.png`, `m1_malacia.png`.
 
-## Window-size ablation on collapse (±1, ±2, ±4)
+## Window-size and slab ablations on collapse
 
-_(pending)_
+| stereo window | d error median / p90 (mm) | event station: M1 min vs truth | event-window coverage |
+|---|---|---|---|
+| ±1 frame | 0.39 / 1.68 | 87 % vs 37 % *seen* (the peak itself is not observed) | 7 / 13 |
+| ±2 frames | 0.47 / 1.83 | 86 % vs 74 % | 14 / 27 |
+| ±4 frames | 0.53 / 1.89 | 87 % vs 75 % | 13 / 27 |
+
+The window is a weak lever: a shorter baseline is slightly more accurate on slow motion but sees even less of the
+fast event, and all three overshoot at the exact peak, where a +0.4 mm displacement error costs 25 % of area
+because the lumen is nearly closed. Coverage on the ramps is limited by how many depth points survive the
+consistency filter on a fast-moving surface, not by the window. Thickening the station slab from ±0.5 to ±1.0 mm
+(the collapse extends over 7 mm in z, so nothing is lost) raises the event coverage from 14/27 to 21/28 at equal
+accuracy on every scenario, and is now the default (±1.5 gives 24/29).
 
 ## Frames the rigid pipeline dropped: malacia with interpolated poses
 
 Rigid SfM registered 129 of 180 malacia frames, dropping the two breathing peaks. `interpolate_poses.py` fills
 them (linear centre, slerp rotation): 0.52 mm / 1.3° median error against the truth on the 51 filled frames.
-_(M1 on the filled model: pending)_
+M1 on the filled model runs on all 180 frames: the cartilage deviation rises from 0.04 to 0.10 mm (the price of
+the interpolated poses) and the CSA error median stays at −14 %, i.e. coverage is recovered but the accuracy on
+malacia is set by the velocity bias described above, not by the missing poses.
 
 ## The prior violated: uniform contraction
 
-_(pending: the whole circumference contracts, so the "cartilage" moves; the method must flag this through the
-cartilage-radius check rather than absorb it)_
+The whole circumference contracts periodically by 30 % in area (no rigid sector at all). Two things happen, both
+predicted in the README:
+
+1. **Rigid SfM loses its anchor.** Camera-centre error 0.82 mm (max 1.33) and 0.61° median relative-rotation error,
+   against 0.06 mm and 0.1° when only the posterior half moved: with nothing rigid in view, a uniform radial
+   contraction is partly read as camera translation along the axis. The rigid dense calibre is biased by −1.3 mm and
+   the pipeline reads 40 % obstruction with CV 0.15, its own unreliable-geometry flag.
+2. **M1 flags the violation rather than absorbing it.** The cartilage-radius check reads 0.51 mm median deviation,
+   twelve times the 0.04 mm of every prior-satisfying scenario; the prior-based CSA is wrong (−18 % median), as it
+   must be when the assumed rigid sector moves, and the flag says so.
+
+| scenario | rigid pose error (centre / rel. rotation) | M1 cartilage deviation (rigidity check) |
+|---|---|---|
+| static | 0.005 mm / 0.01° | 0.038 mm |
+| breathing (posterior) | 0.018 mm / 0.02° | 0.042 mm |
+| collapse (posterior) | 0.06 mm / 0.04° | 0.042 mm |
+| malacia (posterior) | 0.03 mm / 0.01° | 0.038 mm |
+| **uniform (all sectors)** | **0.82 mm / 0.61°** | **0.51 mm** |
+
+Figure: `docs/figures/m1_uniform.png`.
 
 ## Real video: 26-V2 across its documented posterior-wall collapse
 
