@@ -48,10 +48,33 @@ to the level of the static tube. That is the mechanism confirmed and removed. Wh
 - the true motion is not available on real data; whether the iteration from the biased estimate converges to it
   is the next table.
 
-## Estimation loop (seeded by the biased M1 estimate)
+## Malacia (fast periodic wall, 47 %)
 
-_(pending: `m2/iterate.sh collapse 3`, `breathing 3`)_
+| compensation | cells | d error mm median / p90 | CSA(z,t) err median / p90 |
+|---|---|---|---|
+| none | 158 | 2.63 / 2.90 | −17.6 % / 20.0 % |
+| **true motion** | 633 | **0.12 / 0.50** | **−0.7 % / 3.7 %** |
 
-## Malacia (fast periodic wall)
+The fastest case, unmeasurable by plain stereo (and by COLMAP's, 2.1 mm), is recovered to 0.12 mm once the motion is
+compensated. Coverage also quadruples, because compensated sources agree and survive the consistency filter.
 
-_(pending: oracle and none)_
+## Estimation loop seeded by the biased M1 estimate (`m2/iterate.sh`): does not converge
+
+| scenario | seed (M1 on COLMAP) | iteration 1 | iteration 2 | iteration 3 | ceiling (true motion) |
+|---|---|---|---|---|---|
+| collapse, d err median / p90 mm | 0.48 / 1.88 | 0.55 / 1.01 | 0.42 / 1.53 | 0.45 / 1.01 | 0.07 / 0.26 |
+| breathing, d err median / p90 mm | 0.68 / 1.58 | 0.72 / 1.61 | 0.59 / 2.31 | 0.42 / 2.12 | 0.06 / 0.16 |
+
+Compensation needs the increment d(k+Δ) − d(k) over the window, i.e. the wall velocity, to about 20 % to remove
+most of the bias; differentiating a noisy, gappy per-frame estimate gives it to about 100 %, so the fixed point
+moves little. The velocity must therefore be found in the images, not in the estimate.
+
+## Joint estimation: velocity search inside the stereo (`m2/mc_sweep_vsearch.py`)
+
+For each frame, a small set of wall-velocity hypotheses (0, ±1, ±2, ±4, ±8, ±12, ±20 mm/s) compensates the
+sources; per station the hypothesis under which the membrane texture matches best across the sources (mean best
+NCC) is kept if it beats "no motion" by a margin, and the final depth is swept with that v(z). This gives, per
+frame and station, a velocity measured from the images that can be compared with the true d(d)/dt directly, and a
+depth map free of the bias to the extent the velocity is right.
+
+_(running)_
