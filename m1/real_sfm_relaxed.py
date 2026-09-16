@@ -24,6 +24,14 @@ def sh(cmd, log=None):
     if r.returncode != 0: raise RuntimeError(cmd[0] + "\n" + r.stderr[-1500:])
 
 
+def gpu_opt(cmd):
+    """COLMAP renamed the GPU-index options between versions: find the one this binary accepts."""
+    h = subprocess.run([COLMAP, cmd, "-h"], capture_output=True, text=True); h = h.stdout + h.stderr
+    for line in h.splitlines():
+        if "gpu_index" in line: return line.split()[0]
+    return None
+
+
 def bezel(video, n=60):
     cap = cv2.VideoCapture(video); N = int(cap.get(7)); H = int(cap.get(4)); W = int(cap.get(3)); cum = np.zeros((H, W), np.int32)
     for fi in np.linspace(0, max(N - 1, 0), n).astype(int):
@@ -51,9 +59,9 @@ if not a.skip_extract:
 db = f"{out}/db.db"; log = f"{out}/colmap.log"
 if os.path.exists(db): os.remove(db)
 sh(["feature_extractor", "--database_path", db, "--image_path", img, "--ImageReader.mask_path", msk, "--ImageReader.camera_model", "OPENCV", "--ImageReader.single_camera", "1",
-    "--ImageReader.camera_params", pstr, "--SiftExtraction.max_image_size", "1600", "--SiftExtraction.max_num_features", "8192", "--SiftExtraction.peak_threshold", "0.005", "--SiftExtraction.gpu_index", a.gpu], log)
+    "--ImageReader.camera_params", pstr, "--SiftExtraction.max_image_size", "1600", "--SiftExtraction.max_num_features", "8192", "--SiftExtraction.peak_threshold", "0.005"] + ([gpu_opt("feature_extractor"), a.gpu] if gpu_opt("feature_extractor") else []), log)
 print("[features] done", flush=True)
-sh(["sequential_matcher", "--database_path", db, "--SequentialMatching.overlap", str(a.overlap), "--SequentialMatching.quadratic_overlap", "0", "--SequentialMatching.loop_detection", "0", "--SiftMatching.gpu_index", a.gpu], log)
+sh(["sequential_matcher", "--database_path", db, "--SequentialMatching.overlap", str(a.overlap), "--SequentialMatching.quadratic_overlap", "0", "--SequentialMatching.loop_detection", "0"] + ([gpu_opt("sequential_matcher"), a.gpu] if gpu_opt("sequential_matcher") else []), log)
 print(f"[matching] sequential, overlap {a.overlap}", flush=True)
 sp = f"{out}/sparse"; shutil.rmtree(sp, ignore_errors=True); os.makedirs(sp)
 sh(["mapper", "--database_path", db, "--image_path", img, "--output_path", sp, "--Mapper.ba_refine_focal_length", "0", "--Mapper.ba_refine_extra_params", "0", "--Mapper.ba_refine_principal_point", "0",

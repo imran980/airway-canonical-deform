@@ -10,7 +10,7 @@ Env:   BRONCHO_COLMAP (default colmap)"""
 import sys, os, argparse, subprocess, tempfile, shutil
 import numpy as np
 
-ap = argparse.ArgumentParser(); ap.add_argument("workspace"); ap.add_argument("out"); ap.add_argument("--n-frames", type=int, default=180); ap.add_argument("--pattern", default="f{:05d}.png")
+ap = argparse.ArgumentParser(); ap.add_argument("workspace"); ap.add_argument("out"); ap.add_argument("--n-frames", type=int, default=180); ap.add_argument("--pattern", default="f{:05d}.png"); ap.add_argument("--lo", type=int, default=0, help="first frame index (default 0; frames lo..lo+n_frames-1)")
 a = ap.parse_args(); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap")
 
 
@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory() as td:
     imgs = {}
     for hdr, pts in zip(L[0::2], L[1::2]):
         f = hdr.split(); imgs[f[9]] = dict(id=int(f[0]), q=np.array(list(map(float, f[1:5]))), t=np.array(list(map(float, f[5:8]))), cam=int(f[8]), pts=pts.rstrip("\n"))
-names = [a.pattern.format(k) for k in range(a.n_frames)]; have = [k for k, n in enumerate(names) if n in imgs]; missing = [k for k, n in enumerate(names) if n not in imgs]
+names = [a.pattern.format(k) for k in range(a.lo, a.lo + a.n_frames)]; have = [k for k, n in enumerate(names) if n in imgs]; missing = [k for k, n in enumerate(names) if n not in imgs]   # k = 0-based index into names
 print(f"{len(have)} registered, {len(missing)} missing of {a.n_frames}")
 # c2w for registered frames
 C = {}; Q = {}

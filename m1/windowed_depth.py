@@ -25,14 +25,17 @@ ap.add_argument("--window", type=int, default=2, help="source frames k-w..k+w fo
 ap.add_argument("--gpus", default="0,1,2,3"); ap.add_argument("--max-size", type=int, default=1600)
 ap.add_argument("--ahead", default="4,18", help="stations measured this many mm ahead of the camera")
 ap.add_argument("--skip-stereo", action="store_true", help="reuse existing depth maps in <out>/dense")
-a = ap.parse_args(); os.makedirs(a.out, exist_ok=True); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap")
+ap.add_argument("--min-pts", type=int, default=25, help="minimum posterior points for a displacement estimate")
+ap.add_argument("--dense-from", default=None, help="reuse the depth maps of another run's dense dir (implies --skip-stereo)")
+a = ap.parse_args(); os.makedirs(a.out, exist_ok=True); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap"); MIN_PTS = a.min_pts
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "synthetic")); import deforming_trachea as dt
 
 g = np.load(f"{a.synth_run}/gt.npz"); P = json.loads(str(g["params"])); p = dt.Params(**P)
 t, z, th, r0, CSA_gt, c2w, D = g["t"], g["z"], g["theta"], g["r_canonical"], g["csa_mm2"], g["poses_c2w"], g["deformation"].astype(np.float32)
 N, dz = len(t), z[1] - z[0]; w_memb, cart_w = dt.sector_weights(th, p); Rr = P["radius_mm"]
 from scipy.ndimage import binary_dilation, label
-dense = os.path.join(a.out, "dense")
+dense = a.dense_from if a.dense_from else os.path.join(a.out, "dense")
+if a.dense_from: a.skip_stereo = True
 
 
 def sh(cmd):
@@ -125,7 +128,7 @@ def membrane_d(x, y, r_can):
     inside = np.abs(y) < 0.85 * r_can; xa = np.sqrt(np.maximum(r_can ** 2 - y[inside] ** 2, 0)); xi, yi = x[inside], y[inside]
     th0 = np.mod(np.arctan2(yi, -xa), 2 * np.pi); w0 = np.interp(th0, th, w_memb)
     use = (w0 > 0.6) & (xi < xa - 0.8) & (xi + xa > -1.0)
-    return float(np.median((xi[use] + xa[use]) / w0[use])) if use.sum() >= 25 else np.nan
+    return float(np.median((xi[use] + xa[use]) / w0[use])) if use.sum() >= MIN_PTS else np.nan
 
 
 depth_dir = f"{dense}/stereo/depth_maps"; n_used = 0
@@ -148,10 +151,11 @@ for j, (k, n) in enumerate(zip(frames, names)):
         if keep.sum() < 60: continue
         x, y = x[keep], y[keep]; ang = np.arctan2(y, x); b = ((ang + np.pi) / (2 * np.pi) * 36).astype(int) % 36
         est["cov"][k, i] = len(np.unique(b)) / 36.0
-        rc = r0[iz_gt[i]]; r_can = float(rc[np.abs(th) < np.radians(40)].mean())         # canonical anterior radius at this station
+        rc = r0[iz_gt[i]]; r_can = float(rc[np.abs(th) < np.radians(40)].mean())         # canonical anterior (cartilage) radius at this station
+        r_memb0 = float(rc[w_memb > 0.9].mean())                                          # canonical rest radius of the membrane sector (no rings there)
         ant = np.abs(ang) < np.radians(40); est["r_cart_dev"][k, i] = float(np.median(np.hypot(x[ant], y[ant])) - r_can) if ant.sum() >= 20 else np.nan
         est["csa_free"][k, i] = free_area(x, y)
-        dm = membrane_d(x, y, r_can); est["d_est"][k, i] = dm
+        dm = membrane_d(x, y, r_memb0); est["d_est"][k, i] = dm
         if np.isfinite(dm):
             Xm, Ym = dt.deform_xy(r0[iz_gt[i]:iz_gt[i] + 1], th, (max(dm, 0.0) * w_memb)[None, :], p); est["csa_model"][k, i] = float(dt.csa_from_xy(Xm, Ym)[0])
         gt["csa"][k, i] = CSA_gt[k, iz_gt[i]]; gt["d"][k, i] = float(D[k, iz_gt[i], memb_mid].max())
