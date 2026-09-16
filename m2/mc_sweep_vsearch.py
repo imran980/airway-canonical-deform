@@ -70,7 +70,7 @@ def ncc(ref, src, kw):
     return (cov / torch.sqrt(torch.clamp(vr * vs, min=1e-8)))[0, 0], vr[0, 0]
 
 
-def sweep(j, k, src_ks, scale, planes, vel_of_z):
+def sweep(j, k, src_ks, scale, planes, vel_of_z, ncc_min=None, min_cons=None):
     """vel_of_z: callable(zmm tensor) -> velocity mm/s per point (wall moving into the lumen positive), or None.
     returns cmin (H,W), depth (H,W, scene units), ok mask, zmm/theta of the best-plane point (H,W), membrane weight."""
     W, H = int(round(W0 * scale)), int(round(H0 * scale)); fx, fy, cx, cy = prm0[:4] * scale
@@ -97,7 +97,9 @@ def sweep(j, k, src_ks, scale, planes, vel_of_z):
     denom = cm - 2 * cmin + cp; off = torch.where(denom.abs() > 1e-6, 0.5 * (cm - cp) / denom, torch.zeros_like(cmin)).clamp(-1, 1)
     inv = 1.0 / Zs; depth = 1.0 / (inv[best] + off * (inv[bp] - inv[bm]) / 2)
     consistent = ((cost_all.argmin(1) - best[None]).abs() <= 2).sum(0) >= min(a.min_consistent, len(srcs))
-    ok = (cmin < 1.0 - a.ncc_min) & consistent & (best > 0) & (best < planes - 1) & (vref > 1e-4)
+    ncc_min_ = a.ncc_min if ncc_min is None else ncc_min; min_cons_ = a.min_consistent if min_cons is None else min_cons
+    consistent = ((cost_all.argmin(1) - best[None]).abs() <= 2).sum(0) >= min(min_cons_, len(srcs))
+    ok = (cmin < 1.0 - ncc_min_) & consistent & (best > 0) & (best < planes - 1) & (vref > 1e-4)
     zb = zmm_pl.gather(0, best.flatten()[None])[0].view(H, W); thb = th_pl.gather(0, best.flatten()[None])[0].view(H, W)
     wb = wm[torch.clamp((torch.remainder(thb, 2 * np.pi) / (2 * np.pi) * len(th)).round().long(), 0, len(th) - 1)]
     return cmin, depth, ok, zb, wb
@@ -116,10 +118,10 @@ for j, k in enumerate(frames):
     # 1. velocity search at reduced resolution: per station z-bin, mean best NCC of membrane pixels under each hypothesis
     S = torch.full((nz, n_v), float("nan"), device=dev); cnt = torch.zeros((nz, n_v), device=dev)
     for hi_, vh in enumerate(vels):
-        cmin, depth, ok, zb, wb = sweep(j, k, src_ks, a.search_scale, a.search_planes, (lambda zmm, vh=vh: torch.full_like(zmm, vh)))
+        cmin, depth, ok, zb, wb = sweep(j, k, src_ks, a.search_scale, a.search_planes, (lambda zmm, vh=vh: torch.full_like(zmm, vh)), ncc_min=0.4, min_cons=2)
         sel = ok & (wb > 0.6); iz = torch.clamp(((zb - zs[0]) / 1.0).round().long(), 0, nz - 1)[sel]; val = (1.0 - cmin)[sel]
         ssum = torch.zeros(nz, device=dev).index_add_(0, iz, val); c_ = torch.zeros(nz, device=dev).index_add_(0, iz, torch.ones_like(val))
-        S[:, hi_] = torch.where(c_ >= 50, ssum / c_.clamp(min=1), torch.full_like(ssum, float("nan"))); cnt[:, hi_] = c_
+        S[:, hi_] = torch.where(c_ >= 20, ssum / c_.clamp(min=1), torch.full_like(ssum, float("nan"))); cnt[:, hi_] = c_
     S_np = S.cpu().numpy(); i0 = vels.index(0.0); v_row = np.full(nz, np.nan)
     for i in range(nz):
         row = S_np[i]
