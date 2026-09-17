@@ -153,5 +153,23 @@ that one gate; the honest operating point is the strict one, with coverage repor
 without touching the gate by fusing neighbouring frames' compensated points into each station after shifting them
 by the estimated wall motion (next section).
 
+### Deformation-aware fusion of neighbouring frames: negative
+
+To raise coverage without touching the gate, the points of frames k±F were shifted by the estimated wall motion
+v(z)·Δt·w(θ) and added to frame k's stations (`m1/windowed_depth.py --fuse-vel`):
+
+| collapse, v2 maps | cells | d err mm median / p90 | CSA err median / p90 |
+|---|---|---|---|
+| no fusion | 518 | 0.17 / 0.58 | −0.6 % / 5.2 % |
+| fuse ±1 frame | 1134 | 0.27 / 3.22 | −1.8 % / 31 % |
+| fuse ±2 frames | 1442 | 0.35 / 8.28 | −2.6 % / 77 % |
+
+Coverage doubles and precision collapses. The asymmetry is instructive: de-biasing the stereo needs the velocity
+only over the ±2-frame baseline and its errors partly cancel across the sources, so a rough velocity field is
+enough; warping points across frames needs the absolute displacement between frames, and a velocity that is right
+in sign but about twice too large for slow motion misplaces them by more than the bias it removes. A deformation-
+aware fusion therefore has to wait for a better velocity estimate; until then the single-frame estimate at the
+strict gate is the operating point.
+
 Code: `m2/mc_sweep.py`, `m2/mc_sweep_vsearch.py`, `m2/mc_sweep_vsearch2.py`, `m2/iterate.sh`, `m2/eval_velocity.py`,
 `m2/real_periodicity.py`.
