@@ -108,4 +108,32 @@ smooth function of time; per-frame independent picks are what fail), scoring by 
 rather than mean NCC, and a coarse-to-fine schedule in velocity. The streaming pose front end for real
 discontinuities (26-V2) is the other half of M2 and is untouched so far.
 
-Code: `m2/mc_sweep.py`, `m2/mc_sweep_vsearch.py`, `m2/iterate.sh`, `m2/eval_velocity.py`.
+## Night 2: velocity search v2 (`m2/mc_sweep_vsearch2.py`)
+
+Changes from v1: 21 hypotheses (0, ±1, ±2, ±3, ±4, ±6, ±8, ±11, ±15, ±20, ±27 mm/s); the score is the sum of best
+NCC over the membrane pixels a hypothesis makes consistent (rewarding both more pixels and better matches); scores
+are summed over ±2 neighbouring frames before the decision (wall velocity is smooth in time); acceptance needs a 5 %
+relative gain over "no motion"; a temporal median (±2 frames) and gap filling (≤ 6 frames) give the final v(z, t);
+the full-resolution depth is swept with it. Pass-1 scores are saved, so the decision rule can be re-tuned cheaply.
+
+| scenario | plain stereo | v1 search | **v2 search** | true motion | cells (v2) |
+|---|---|---|---|---|---|
+| breathing 13 %, d err mm median / p90 | 0.68 / 1.58 | 0.19 / 1.91 | **0.14 / 0.42** | 0.06 / 0.16 | 707 |
+| collapse 74 % | 0.44 / 1.67 | 0.27 / 1.46 | **0.17 / 0.58** | 0.07 / 0.26 | 518 |
+| malacia 47 % | 2.63 / 2.90 | 2.51 / 2.91 | **0.35 / 0.90** | 0.12 / 0.50 | 176 |
+| CSA(z,t) err median / p90 (v2) | | | breathing −0.3 % / 2.9 %; collapse −0.6 % / 5.2 %; malacia −2.1 % / 6.1 % | | |
+| cartilage deviation (v2) | | | 0.062–0.066 mm | | |
+
+Malacia, unmeasurable by every earlier variant (2.5–2.6 mm), is now recovered to 0.35 mm from the images alone,
+seven times better, and breathing and collapse move most of the way to the oracle. The velocity field itself is
+rougher than the depth it produces: sign right in 68–77 % of moving cells, magnitude over-estimated for slow motion
+(chosen |v| about twice the truth at 1–3 mm/s, 1.1–1.4× above 6 mm/s), correlation with the true rate 0.2–0.5.
+Over-compensating a slow wall costs little; under-compensating a fast one cost everything, which is why the depth
+gains are large despite a noisy velocity.
+
+Caveat: coverage. The strict final masks keep fewer cells than COLMAP's maps (518–707 vs ≈ 2400), and at the far
+event station of the collapse only one frame survives, so the event itself is not measured there in this run. The
+next table re-tunes the final gate and the aggregation window from the saved scores.
+
+Code: `m2/mc_sweep.py`, `m2/mc_sweep_vsearch.py`, `m2/mc_sweep_vsearch2.py`, `m2/iterate.sh`, `m2/eval_velocity.py`,
+`m2/real_periodicity.py`.
