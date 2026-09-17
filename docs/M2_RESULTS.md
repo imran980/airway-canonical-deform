@@ -153,6 +153,16 @@ that one gate; the honest operating point is the strict one, with coverage repor
 without touching the gate by fusing neighbouring frames' compensated points into each station after shifting them
 by the estimated wall motion (next section).
 
+### Refining the velocity magnitude: marginal
+
+A second search level tried multiplicative factors (0.5, 0.7, 1.4, 2.0) around each station's chosen velocity,
+scored like the first level. The slow-motion magnitude ratio improves from 2.5× to 1.7× but the depth barely
+moves (0.16 / 0.56 mm against 0.17 / 0.58): the compensation is insensitive to the residual over-estimate, which is
+the same reason a rough velocity was already enough.
+
+Figure: `docs/figures/m2_collapse_summary.png` (truth, rigid map, plain per-frame stereo, v2 search and the true-
+motion ceiling at one station, and the error distribution over the gated cells of the whole clip).
+
 ### Mis-specified prior: a plain posterior box instead of the true taper
 
 Real anatomy will not hand us the generator's sector weights. Replacing them by a plain ±90° posterior box (every
