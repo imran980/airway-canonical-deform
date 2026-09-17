@@ -15,13 +15,14 @@ import numpy as np
 ap = argparse.ArgumentParser(); ap.add_argument("workspace"); ap.add_argument("--out", required=True); ap.add_argument("--model", default="sparse/0")
 ap.add_argument("--event", type=int, nargs=2, default=None, help="frame range of the documented wall event"); ap.add_argument("--window", type=int, default=2)
 ap.add_argument("--gpus", default="0,1,2,3"); ap.add_argument("--max-size", type=int, default=1600); ap.add_argument("--skip-stereo", action="store_true"); ap.add_argument("--ahead", default="0.8,3.5")
+ap.add_argument("--canonical-frames", type=int, nargs=2, default=None, help="build the canonical wall from this frame range only (e.g. the post-event pullback), falling back to all frames where it has < 5 observations")
 a = ap.parse_args(); os.makedirs(a.out, exist_ok=True); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap"); dense = f"{a.out}/dense"
 from scipy.ndimage import uniform_filter1d
 from scipy.spatial import cKDTree
 
 
 def sh(cmd):
-    r = subprocess.run([COLMAP] + cmd, capture_output=True, text=True)
+    r = subprocess.run([COLMAP] + cmd, capture_output=True, text=True, errors="replace")
     if r.returncode != 0: raise RuntimeError(cmd[0] + "\n" + r.stderr[-1500:])
 
 
@@ -131,6 +132,9 @@ seen = np.isfinite(r_grid).any(2); print(f"(frame, station) cells measured: {see
 
 # ------------------------------------------------------------------ 3. canonical wall (time median) and deformation
 r_can = np.nanmedian(r_grid, axis=0); n_obs = np.isfinite(r_grid).sum(0); r_can[n_obs < 5] = np.nan
+if a.canonical_frames:
+    cf = (frames >= a.canonical_frames[0]) & (frames <= a.canonical_frames[1]); r_sub = np.nanmedian(r_grid[cf], axis=0); n_sub = np.isfinite(r_grid[cf]).sum(0)
+    use = n_sub >= 5; r_can = np.where(use, r_sub, r_can); print(f"canonical wall from f{a.canonical_frames[0]}-f{a.canonical_frames[1]} on {use.sum()} (station, sector) cells, all-frame fallback on {(~use & np.isfinite(r_can)).sum()}")
 dev = (r_grid - r_can[None]) / R                                   # deformation in units of R (negative = wall moved into the lumen)
 csa_can = np.full(nS, np.nan); tb = (np.arange(nb) + 0.5) / nb * 2 * np.pi - np.pi
 for i in range(nS):

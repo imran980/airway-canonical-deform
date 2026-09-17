@@ -28,7 +28,7 @@ ap.add_argument("--fps", type=float, default=29.97); ap.add_argument("--scores-f
 ap.add_argument("--plain", action="store_true", help="no search: final sweep with zero velocity everywhere (the uncompensated baseline with identical gates)")
 a = ap.parse_args(); os.makedirs(f"{a.out}/dense/stereo/depth_maps", exist_ok=True); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap"); dev = torch.device(f"cuda:{a.gpu}")
 def sh(cmd):
-    r = subprocess.run([COLMAP] + cmd, capture_output=True, text=True)
+    r = subprocess.run([COLMAP] + cmd, capture_output=True, text=True, errors="replace")
     if r.returncode != 0: raise RuntimeError(cmd[0] + "\n" + r.stderr[-1500:])
 # undistorted pinhole workspace (images + sparse) at the same size as the per-frame run
 if not os.path.isdir(f"{a.out}/dense/sparse"):

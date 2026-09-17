@@ -19,14 +19,14 @@ J = json.load(open(a.calib)); pstr = ",".join(str(v) for v in J["params_colmap"]
 
 
 def sh(cmd, log=None):
-    r = subprocess.run([COLMAP] + cmd, capture_output=True, text=True)
+    r = subprocess.run([COLMAP] + cmd, capture_output=True, text=True, errors="replace")
     if log: open(log, "a").write(" ".join(cmd[:1]) + "\n" + r.stdout[-3000:] + r.stderr[-3000:])
     if r.returncode != 0: raise RuntimeError(cmd[0] + "\n" + r.stderr[-1500:])
 
 
 def gpu_opt(cmd):
     """COLMAP renamed the GPU-index options between versions: find the one this binary accepts."""
-    h = subprocess.run([COLMAP, cmd, "-h"], capture_output=True, text=True); h = h.stdout + h.stderr
+    h = subprocess.run([COLMAP, cmd, "-h"], capture_output=True, text=True, errors="replace"); h = h.stdout + h.stderr
     for line in h.splitlines():
         if "gpu_index" in line: return line.split()[0]
     return None

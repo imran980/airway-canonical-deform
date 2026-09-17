@@ -9,7 +9,7 @@ import os, argparse, subprocess, tempfile, shutil, numpy as np
 ap = argparse.ArgumentParser(); ap.add_argument("workspace"); ap.add_argument("out"); ap.add_argument("--model", default="sparse/0"); ap.add_argument("--last-good", type=int, required=True); ap.add_argument("--hi", type=int, required=True)
 ap.add_argument("--lo", type=int, default=0); ap.add_argument("--fit", type=int, default=16); ap.add_argument("--speed-factor", type=float, default=1.0, help="scale the fitted centre velocity (and rotation rate) by this factor for the extrapolated frames"); ap.add_argument("--pattern", default="f{:05d}.png"); a = ap.parse_args(); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap")
 def sh(cmd):
-    r = subprocess.run([COLMAP] + cmd, capture_output=True, text=True)
+    r = subprocess.run([COLMAP] + cmd, capture_output=True, text=True, errors="replace")
     if r.returncode != 0: raise RuntimeError(cmd[0] + "\n" + r.stderr[-1500:])
 def q2R(q):
     w, x, y, z = q

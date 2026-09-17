@@ -46,7 +46,7 @@ if a.dense_from: a.skip_stereo = True
 
 
 def sh(cmd):
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
     if r.returncode != 0: raise RuntimeError(" ".join(cmd[:3]) + "\n" + r.stderr[-1500:])
     return r.stdout
 

@@ -10,7 +10,7 @@ import sys, os, argparse, subprocess, tempfile, shutil, numpy as np
 ap = argparse.ArgumentParser(); ap.add_argument("a"); ap.add_argument("b"); ap.add_argument("out"); ap.add_argument("--iters", type=int, default=2000); ap.add_argument("--inlier-rel", type=float, default=0.03, help="inlier threshold as a fraction of the model's point-cloud extent")
 a = ap.parse_args(); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap")
 def sh(cmd):
-    r = subprocess.run([COLMAP] + cmd, capture_output=True, text=True)
+    r = subprocess.run([COLMAP] + cmd, capture_output=True, text=True, errors="replace")
     if r.returncode != 0: raise RuntimeError(cmd[0] + "\n" + r.stderr[-1500:])
 def read(model):
     td = tempfile.mkdtemp(); sh(["model_converter", "--input_path", model, "--output_path", td, "--output_type", "TXT"])

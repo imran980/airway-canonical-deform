@@ -10,7 +10,7 @@ Env:   BRONCHO_COLMAP (default colmap)"""
 import sys, os, argparse, subprocess, tempfile, shutil
 import numpy as np
 
-ap = argparse.ArgumentParser(); ap.add_argument("workspace"); ap.add_argument("out"); ap.add_argument("--n-frames", type=int, default=180); ap.add_argument("--pattern", default="f{:05d}.png"); ap.add_argument("--lo", type=int, default=0, help="first frame index (default 0; frames lo..lo+n_frames-1)")
+ap = argparse.ArgumentParser(); ap.add_argument("workspace"); ap.add_argument("out"); ap.add_argument("--model", default="sparse/0"); ap.add_argument("--n-frames", type=int, default=180); ap.add_argument("--pattern", default="f{:05d}.png"); ap.add_argument("--lo", type=int, default=0, help="first frame index (default 0; frames lo..lo+n_frames-1)")
 a = ap.parse_args(); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap")
 
 
@@ -33,7 +33,7 @@ def slerp(q0, q1, u):
 
 
 with tempfile.TemporaryDirectory() as td:
-    subprocess.run([COLMAP, "model_converter", "--input_path", f"{a.workspace}/sparse/0", "--output_path", td, "--output_type", "TXT"], check=True, capture_output=True)
+    subprocess.run([COLMAP, "model_converter", "--input_path", f"{a.workspace}/{a.model}", "--output_path", td, "--output_type", "TXT"], check=True, capture_output=True)
     cam_lines = open(f"{td}/cameras.txt").read(); pts_lines = open(f"{td}/points3D.txt").read()
     L = [l for l in open(f"{td}/images.txt") if l.strip() and not l.startswith("#")]
     imgs = {}
@@ -58,16 +58,28 @@ for k in missing:
     Rc2w = q2R(q / np.linalg.norm(q)); Rw2c = Rc2w.T; tvec = -Rw2c @ c; new[k] = (R2q(Rw2c), tvec)
 os.makedirs(f"{a.out}/sparse/0", exist_ok=True); td = f"{a.out}/sparse/txt"; os.makedirs(td, exist_ok=True)
 if True:
-    open(f"{td}/cameras.txt", "w").write(cam_lines); open(f"{td}/points3D.txt", "w").write(pts_lines)
+    open(f"{td}/cameras.txt", "w").write(cam_lines)
+    kept_ids = {imgs[n]["id"] for n in names if n in imgs}; valid_pts = set(); P_out = []            # tracks through dropped images (outside lo..lo+n) would dangle
+    for l in pts_lines.splitlines():
+        if l.startswith("#") or not l.strip(): continue
+        fld = l.split(); tr = fld[8:]; tr2 = [x for im, kk in zip(tr[0::2], tr[1::2]) if int(im) in kept_ids for x in (im, kk)]
+        if len(tr2) >= 4: P_out.append(" ".join(fld[:8] + tr2) + "\n"); valid_pts.add(int(fld[0]))
+    open(f"{td}/points3D.txt", "w").writelines(P_out)
+    def clean_pts(line):
+        v = line.split(); out = []
+        for x, y, pid in zip(v[0::3], v[1::3], v[2::3]): out += [x, y, pid if (int(pid) < 0 or int(pid) in valid_pts) else "-1"]
+        return " ".join(out) if out else "0 0 -1"
     with open(f"{td}/images.txt", "w") as f:
         f.write("# Image list with two lines of data per image:\n#   IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, NAME\n#   POINTS2D[] as (X, Y, POINT3D_ID)\n")
         for k in range(a.n_frames):
             n = names[k]
             if n in imgs:
-                im = imgs[n]; f.write(f"{im['id']} " + " ".join(f"{v:.10g}" for v in im['q']) + " " + " ".join(f"{v:.10g}" for v in im['t']) + f" {im['cam']} {n}\n{im['pts']}\n")
+                im = imgs[n]; f.write(f"{im['id']} " + " ".join(f"{v:.10g}" for v in im['q']) + " " + " ".join(f"{v:.10g}" for v in im['t']) + f" {im['cam']} {n}\n{clean_pts(im['pts'])}\n")
             else:
                 q, tv = new[k]; f.write(f"{next_id} " + " ".join(f"{v:.10g}" for v in q) + " " + " ".join(f"{v:.10g}" for v in tv) + f" {cam_id} {n}\n0 0 -1\n"); next_id += 1        # one dummy 2D point: COLMAP's text reader skips blank lines
-    r = subprocess.run([COLMAP, "model_converter", "--input_path", td, "--output_path", f"{a.out}/sparse/0", "--output_type", "BIN"], capture_output=True, text=True)
+    for extra_f in ("frames.txt", "rigs.txt"):                 # COLMAP >= 3.10 rig/frame tables list the original images only; let the converter rebuild them
+        if os.path.exists(f"{td}/{extra_f}"): os.remove(f"{td}/{extra_f}")
+    r = subprocess.run([COLMAP, "model_converter", "--input_path", td, "--output_path", f"{a.out}/sparse/0", "--output_type", "BIN"], capture_output=True, text=True, errors="replace")
     if r.returncode != 0: print(r.stderr[-800:]); sys.exit(1)
     if r.stdout.strip() or r.stderr.strip(): print("converter:", (r.stdout + r.stderr).strip()[-600:])
 for extra in ("run.log",):
