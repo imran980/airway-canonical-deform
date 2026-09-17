@@ -28,6 +28,7 @@ ap.add_argument("--tagg", type=int, default=2, help="frames on each side whose s
 ap.add_argument("--search-ncc-min", type=float, default=0.4); ap.add_argument("--search-min-consistent", type=int, default=2); ap.add_argument("--min-pixels", type=int, default=20)
 ap.add_argument("--scores-from", default=None, help="reuse pass-1 scores from another run directory"); ap.add_argument("--no-final", action="store_true", help="stop after the velocity field (no depth maps)")
 ap.add_argument("--gpu", type=int, default=0); ap.add_argument("--frames", default=None)
+ap.add_argument("--taper", default="true", help="true = the generator's sector weights; box:<half_angle_deg> = a plain posterior box (mis-specified prior ablation)")
 a = ap.parse_args(); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap"); dev = torch.device(f"cuda:{a.gpu}")
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "synthetic")); import deforming_trachea as dt
 os.makedirs(f"{a.out}/dense/stereo/depth_maps", exist_ok=True)
@@ -53,6 +54,8 @@ names = sorted(imgs, key=lambda n: int(n[1:6])); frames = np.array([int(n[1:6]) 
 Rc2w = np.array([q2R(imgs[n][0]).T for n in names]); C = np.array([-q2R(imgs[n][0]).T @ imgs[n][1] for n in names])
 g = np.load(f"{a.synth_run}/gt.npz"); P = json.loads(str(g["params"])); p = dt.Params(**P); t, z, th, c2w = g["t"], g["z"], g["theta"], g["poses_c2w"]; N = len(t)
 w_memb, _ = dt.sector_weights(th, p); fps = p.fps
+if a.taper.startswith("box:"):
+    half = np.radians(float(a.taper.split(":")[1])); w_memb = (np.abs(np.angle(np.exp(1j * (th - np.pi)))) <= half).astype(np.float64); print(f"taper: posterior box ±{np.degrees(half):.0f} deg (mis-specified prior)")
 Cg = c2w[frames, :3, 3]; mu_s, mu_d = C.mean(0), Cg.mean(0); S_, D_ = C - mu_s, Cg - mu_d; U, sv, Vt = np.linalg.svd(D_.T @ S_ / len(C)); dd = np.ones(3); dd[-1] = np.sign(np.linalg.det(U @ Vt))
 s = (sv * dd).sum() / (S_ ** 2).sum(1).mean(); Mo = sum(c2w[k, :3, :3] @ Rc2w[j].T for j, k in enumerate(frames)); Uo, _, Vto = np.linalg.svd(Mo); Ro = Uo @ np.diag([1, 1, np.sign(np.linalg.det(Uo @ Vto))]) @ Vto; tro = mu_d - s * Ro @ mu_s
 Ro_t = torch.tensor(Ro, device=dev, dtype=torch.float32); tro_t = torch.tensor(tro, device=dev, dtype=torch.float32); xant = torch.tensor(Ro.T @ np.array([1.0, 0, 0]), device=dev, dtype=torch.float32)
