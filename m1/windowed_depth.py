@@ -31,6 +31,8 @@ ap.add_argument("--kappa", default="0", help="velocity-bias coefficient kappa(Z)
 ap.add_argument("--vel-iters", type=int, default=2)
 ap.add_argument("--slab", type=float, default=1.0, help="half-thickness of the station slab in mm")
 ap.add_argument("--rel-pts", type=float, default=0.0, help="membrane points must be at least this fraction of the anterior (rigid) sector count, else unknown")
+ap.add_argument("--fuse-vel", default=None, help="velocity.npz of an M2 velocity-search run: fuse neighbouring frames' points into each frame after shifting the membrane by the estimated wall motion")
+ap.add_argument("--fuse-frames", type=int, default=1, help="neighbours on each side to fuse")
 ap.add_argument("--sources", default="sym", choices=["sym", "past", "future"], help="stereo sources for frame k: k-w..k+w (sym), k-w..k-1 (past) or k+1..k+w (future)")
 a = ap.parse_args(); os.makedirs(a.out, exist_ok=True); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap"); MIN_PTS = a.min_pts; REL_PTS = a.rel_pts
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "synthetic")); import deforming_trachea as dt
@@ -140,6 +142,18 @@ def membrane_d(x, y, r_can, n_ref=None):
 
 
 depth_dir = f"{dense}/stereo/depth_maps"; n_used = 0; zc_arr = np.full(N, np.nan)
+VF = None
+if a.fuse_vel:
+    Vz = np.load(a.fuse_vel); VF = np.nan_to_num(Vz["vsmooth"] if "vsmooth" in Vz.files else Vz["vstar"], nan=0.0); VF_zs = Vz["zs"]   # mm/s, positive = wall moving into the lumen (d increasing)
+
+
+def frame_points_mm(j):
+    """world points (mm, tube frame) of frame j's depth map, or None"""
+    n = names[j]; fp = f"{depth_dir}/{n}.geometric.bin"
+    if not os.path.exists(fp): return None
+    dep = read_depth(fp); model, W, H, prm = cams[imgs[n][2]]; fx, fy, cx, cy = prm[:4]; h_, w_ = dep.shape; sx, sy = w_ / W, h_ / H; fx, cx, fy, cy = fx * sx, cx * sx, fy * sy, cy * sy
+    v, u = np.mgrid[0:h_:2, 0:w_:2]; d_ = dep[::2, ::2]; ok = d_ > 0
+    Xc = np.stack([(u[ok] - cx) / fx * d_[ok], (v[ok] - cy) / fy * d_[ok], d_[ok]], 1); Xw = (Rc2w[j] @ Xc.T).T + C[j]; return (s * (Ro @ Xw.T)).T + tro
 for j, (k, n) in enumerate(zip(frames, names)):
     fp = f"{depth_dir}/{n}.geometric.bin"
     if not os.path.exists(fp): continue
@@ -149,6 +163,17 @@ for j, (k, n) in enumerate(zip(frames, names)):
     Xc = np.stack([(u[ok] - cx) / fx * d_[ok], (v[ok] - cy) / fy * d_[ok], d_[ok]], 1)
     Xw = (Rc2w[j] @ Xc.T).T + C[j]; Pmm = (s * (Ro @ Xw.T)).T + tro; zc = float(((s * (Ro @ C[j])) + tro)[2]); zc_arr[k] = zc
     n_used += 1
+    if VF is not None:                                                   # deformation-aware fusion of neighbouring frames into time t_k
+        extra = []
+        for jj in range(max(0, j - a.fuse_frames), min(len(names), j + a.fuse_frames + 1)):
+            if jj == j: continue
+            Q = frame_points_mm(jj)
+            if Q is None: continue
+            kk = frames[jj]; izq = np.clip(((Q[:, 2] - VF_zs[0]) / (VF_zs[1] - VF_zs[0])).round().astype(int), 0, len(VF_zs) - 1)
+            vq = 0.5 * (VF[k, izq] + VF[kk, izq]); dd_ = vq * (t[k] - t[kk])                                   # membrane displacement between t_kk and t_k (mm)
+            thq = np.arctan2(Q[:, 1], Q[:, 0]); wq = np.interp(np.mod(thq, 2 * np.pi), th, w_memb)
+            Q = Q.copy(); Q[:, 0] += dd_ * wq; extra.append(Q)
+        if extra: Pmm = np.vstack([Pmm] + extra)
     for i, zz in enumerate(zs):
         if not (zc + lo_ahead <= zz <= zc + hi_ahead): continue
         Q = Pmm[np.abs(Pmm[:, 2] - zz) < a.slab]
