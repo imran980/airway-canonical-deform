@@ -215,7 +215,21 @@ estimator unchanged:
 
 The median error drops by a third and the tail by more than half, in line with the prediction. For the clinic this
 is a capture instruction, not a method: a steadily withdrawn scope is a better instrument for a moving wall than a
-dwelling one. _(M2 rows for this video: pending.)_
+dwelling one.
+
+M2 on the same fast-camera video (own sweep, 169 frames):
+
+| 12 mm/s | cells | d err mm median / p90 |
+|---|---|---|
+| plain sweep | 740 | 0.50 / 1.04 |
+| velocity search v2 | 385 | 0.26 / 2.67 |
+| true motion | 847 | 0.08 / 0.25 |
+
+The ceiling is unchanged, but the velocity search helps the median and hurts the tail here: doubling the camera
+speed halves the wall's image motion relative to the parallax, so the hypotheses become harder to separate (chosen
+velocities 3.5× too large for slow motion, half the truth above 12 mm/s, 42 % of cells decided) exactly as the bias
+they would remove shrinks. The compensation is worth most where the scope is slow, which is also where it is most
+needed; a fast, steady withdrawal is the complementary remedy.
 
 ### Deformation-aware fusion of neighbouring frames: negative
 
