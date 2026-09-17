@@ -339,5 +339,22 @@ bias; the four checks (sector, image, magnitude, camera distance) are now the ga
 pass; (2) the bias is measurable on any rigid segment as this slope and can be calibrated out before reading motion,
 which is now the first item of the real-data plan, ahead of the velocity search.
 
+### Brightness-normalised 20-V1: the bias is half photometric, half geometric
+
+The same 337 frames (f2509–2845) with per-frame brightness normalisation before the stereo (800 px, 337 geometric
+maps, 4104 cells on 65 of 74 stations), checked against the *original* frames' dark-lumen statistics:
+
+| 20-V1 | area ratio IQR | slope radius vs camera distance | corr | p5–p95 swing of the median radius | corr(CSA, dark) |
+|---|---|---|---|---|---|
+| as captured | 0.86–1.19 | +0.24 R per R | +0.78 | 0.34 R | −0.57..−0.84 |
+| brightness-normalised | 0.95–1.11 | +0.14 R per R | +0.61 | 0.25 R | −0.47..−0.80 |
+
+Normalising the frames removes about half of the range dependence and a quarter of the swing, so part of the bias is
+photometric (the patch-match behaves differently on the brighter, closer frames) and the rest is geometric. The four
+checks still fail at every station tested (against the image; common-mode at two), and the sector estimator passes
+only 4 of 24 stations, with excursions at the noise floor. The remaining +0.14 R per R is what the distortion test
+below has to explain.
+
 Code: `m2/mc_sweep.py`, `m2/mc_sweep_vsearch.py`, `m2/mc_sweep_vsearch2.py`, `m2/iterate.sh`, `m2/eval_velocity.py`,
-`m2/real_periodicity.py`, `m2/real_checks.py`, `m2/real_sector_estimator.py`, `m2/summary_figure.py`.
+`m2/real_periodicity.py`, `m2/real_checks.py`, `m2/real_sector_estimator.py`, `m2/summary_figure.py`,
+`synthetic/distort_frames.py`.
