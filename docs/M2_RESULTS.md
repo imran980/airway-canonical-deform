@@ -355,6 +355,12 @@ checks still fail at every station tested (against the image; common-mode at two
 only 4 of 24 stations, with excursions at the noise floor. The remaining +0.14 R per R is what the distortion test
 below has to explain.
 
+Correcting the bias in post does not work either (`m2/real_range_correct.py`: each station's radii divided by the
+fitted linear dependence on camera distance, then everything recomputed). On 20-V1 the 5–95 % area swing narrows
+from 0.62–1.42 to 0.73–1.35 and the checks still fail (dark-lumen correlation −0.68 at one station, +0.23 at another;
+the sector estimator's reference arc still moves at 21 of 27 stations). The bias is not a single linear function of
+camera distance, so it has to be removed at its source, not fitted away.
+
 ## Where M2 stands after night 2
 
 Settled on the synthetic tube (figure `docs/figures/m2_night2_summary.png`):
