@@ -144,6 +144,7 @@ Re-tuning from the saved scores (pass 3 only):
 | relaxed final gate, malacia | 1104 | 3.09 / 8.90 | −22.7 % / 60 % |
 
 | 3 of 4 sources, NCC ≥ 0.5 | 547 | 0.18 / 0.61 | −0.7 % / 5.5 % |
+| window ±3 (six sources), 4 of 6 must agree | 452 | 0.15 / 0.48 | −0.4 % / 4.5 % |
 | 2 of 4 sources, NCC ≥ 0.6 | 1688 | 0.75 / 8.41 | −6.6 % / 78 % |
 
 The aggregation window hardly matters and the NCC threshold barely; the requirement that three of the four sources
