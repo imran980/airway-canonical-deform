@@ -233,5 +233,31 @@ in sign but about twice too large for slow motion misplaces them by more than th
 aware fusion therefore has to wait for a better velocity estimate; until then the single-frame estimate at the
 strict gate is the operating point.
 
+## Real video, night 2: 20-V1 (tracheobronchomalacia, CT inspiratory/expiratory 45 % area change)
+
+Per-frame stereo (COLMAP, ±2 frames, no compensation) on the 337-frame rigid model of 20-V1, stations along the
+camera path, canonical wall = time median. Two failed attempts first: a disk-quota crunch and, more instructively, a
+normal-map cleaner running during the stereo (COLMAP's geometric pass reads the sources' photometric normal maps, so
+only the last frames received geometric depth). With nothing deleting, 4283 station cells on 68 of 76 stations.
+
+The per-frame lumen area swings by ±25–45 % over seconds and adjacent stations track each other (correlation 0.98),
+which looked like the respiratory cycle of a malacic trachea. Two checks say otherwise:
+
+- **sector check**: between the widest and narrowest frames, all 36 wall sectors move together (median +0.47 R, no
+  sector still). A membranous collapse is sectoral; a change common to the whole circumference is either a
+  circumferential malacia or a per-frame pose/scale artefact;
+- **image check**: the dark-lumen fraction of the same frames, which does not depend on any pose, is *anti-*
+  correlated with the estimated area (−0.57 to −0.84 across stations), and the estimate is *positively* correlated
+  with image brightness (+0.5 to +0.7). Real narrowing would shrink the dark hole and brighten the image, the
+  opposite signs. So the swing follows illumination and camera distance, not the wall.
+
+Conclusion: on this real clip the per-frame estimator produces large common-mode area swings that are an artefact,
+and the two checks above catch it. The rigidity check that flagged the prior violation on synthetic data is the
+same instrument here: a lumen change that is not confined to a sector should not be believed. What is needed
+before real per-frame calibre can be trusted is the M2 machinery on real data (velocity search with a data-driven
+moving sector) and a photometric normalisation of the frames before stereo; the 5-second station observation
+windows of a withdrawing scope also cannot resolve a 2–3 s respiratory period. Figure:
+`docs/figures/m1_real_20V1_periodicity.png` (the swings; the periodogram peak at 32–37/min is weak).
+
 Code: `m2/mc_sweep.py`, `m2/mc_sweep_vsearch.py`, `m2/mc_sweep_vsearch2.py`, `m2/iterate.sh`, `m2/eval_velocity.py`,
 `m2/real_periodicity.py`.
