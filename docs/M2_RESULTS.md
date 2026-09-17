@@ -176,13 +176,14 @@ the results below (cartilage 0.07 mm in both):
 | breathing 13 % | 0.68 / 1.58 | 0.34 / 1.68 | 0.14 / 0.42 |
 | malacia 47 % | 2.63 / 2.90 | 2.50 / 6.82 | 0.35 / 0.90 |
 | malacia 47 %, box of the **right** extent (±60°) | 2.63 / 2.90 | **0.57 / 2.65** | 0.35 / 0.90 |
+| breathing 13 %, box of the **right** extent (±60°) | 0.68 / 1.58 | **0.25 / 0.84** | 0.14 / 0.42 |
 
 The pattern is about the sector's extent, not its edge shape. The collapse scenario's true moving sector is ±90°,
 so the ±90° box matched it and two thirds of the gain survived. Breathing and malacia have a ±60° sector: the ±90°
 box declared 30° of rigid wall on each side to be moving, the compensation displaced pixels that never moved, no
 hypothesis could make them consistent, and the gain halved (breathing) or vanished (malacia). With a box of the
 right extent and still no taper, malacia recovers most of the gain (0.57 mm against 0.35 with the exact taper and
-2.63 uncompensated). So the method needs the moving sector's extent to within a few tens of degrees; given that,
+2.63 uncompensated) and so does breathing (0.25 against 0.14 and 0.68). So the method needs the moving sector's extent to within a few tens of degrees; given that,
 the taper shape is secondary. On real airways the extent is anatomical (the membranous posterior wall spans roughly
 a third of the circumference) and can be estimated from the data as the sector that moves.
 
