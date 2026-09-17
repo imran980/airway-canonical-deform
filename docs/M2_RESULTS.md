@@ -517,8 +517,43 @@ depth on the *rigid* arc to the canonical tube, and the canonical of the collaps
 post-event pullback (model 1, f1922–2068, the same wall after it re-opens). Constant-velocity carrying, path
 extension and seam-frame bridging are all ruled out by measurement now, which is what this day was for.
 
+### 3b. Canonical-as-map, version 1 (26-V2, afternoon)
+
+Model 1 alone spans both sides of the collapse (f1903–1907 before, f1921 onward after), so the 13 dropped frames were
+carried by interpolation between two registered poses of the same model (`m1/interpolate_poses.py`), the per-frame
+stereo run on gain-normalised frames f1903–2068 (166 frames, 800 px), and the canonical wall taken from the
+post-event pullback f1935–2068 (`--canonical-frames`). `m2/real_event_report.py` then reads the event against that
+map, with the whole-circumference deviation of the carried frames against their registered neighbours as the
+pose-validity measure.
+
+- **The carry is valid where the camera is close.** At the stations 0.9–1.5 R from the camera the carried frames
+  agree with their registered neighbours to 0.01–0.05 R; at 1.7–2.1 R they read the whole wall 0.4–0.7 R outward
+  against 0.12–0.14 for the neighbours, the range dependence once more.
+- **First per-frame reading of a real collapse.** At the near stations the area falls to 0.55–0.93 of the post-event
+  canonical (median during the event 0.83–1.17), the most inward 120° arcs sit at −0.06 to −0.32 R around ±180°
+  (the same direction at three of four stations), and the pose-free dark-lumen fraction goes 0.059 → 0.047 → 0.060.
+  The reading is not clean: the arcs opposite the inward ones move too at two stations, and the post-event frames
+  are contaminated by lost-wall leakage (27–40 % of frames dilated > 1.5×, flagged by the magnitude check), so the
+  area ratios right after the event (2.2–2.6) are not to be believed. Figure `runs/m1_real_26V2d/event_report.png`.
+- **Depth-to-canonical pose registration does not work at this noise level** (`m2/register_to_canonical.py`, the
+  rigid 240° arc against the map, per frame or jointly over a window with a time-linear correction). Unbounded, the
+  fit collapses the depth (scale 0.02–0.05) onto the wall surface; bounded, it runs to every bound; with the scale
+  fixed it moves *registered control frames* by 0.08–0.16 R and 4–7° per frame, and jointly by 0.35–0.44 R and 14°
+  over a window, without improving their residual scatter (MAD 0.20–0.30 R before and after). The per-frame depth
+  noise (0.22–0.30 R) and, above all, a systematic +0.16–0.20 R offset of the pre-event frames against a map built
+  from post-event frames seen at other distances make the registration chase the range bias, not the pose.
+
+So the canonical-as-map idea survives as a design, and its first version establishes that pose can be carried
+between two registered frames of one model well enough to read a collapse at close range; but its refinement step
+is blocked by the same range-dependent radius bias as everything else on real clips. That bias is now the single
+blocker, and the instrument to find its mechanism is a real endoscope with ground truth: the C3VD phantom recordings
+(real optics, known mesh) let the slope of radius against camera distance be measured against truth, photometric
+and geometric causes separated, and a correction validated before it is applied to patients.
+
 Tools added: `m2/real_extract.py` (photometric modes), `m2/real_range_slope.py`, `m2/mc_sweep_vsearch_real.py`,
-`m1/bridge_models.py` (Sim(3) bridge through common features, rejected here on evidence), `m1/extrapolate_poses.py`.
+`m1/bridge_models.py` (Sim(3) bridge through common features, rejected here on evidence), `m1/extrapolate_poses.py`,
+`m1/interpolate_poses.py` (now any model, dangling tracks filtered), `m2/real_event_report.py`,
+`m2/register_to_canonical.py` (kept with its measured failure).
 
 Code: `m2/mc_sweep.py`, `m2/mc_sweep_vsearch.py`, `m2/mc_sweep_vsearch2.py`, `m2/iterate.sh`, `m2/eval_velocity.py`,
 `m2/real_periodicity.py`, `m2/real_checks.py`, `m2/real_sector_estimator.py`, `m2/summary_figure.py`,
