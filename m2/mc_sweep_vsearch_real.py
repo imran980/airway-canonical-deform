@@ -25,6 +25,7 @@ ap.add_argument("--tagg", type=int, default=2); ap.add_argument("--tsmooth", typ
 ap.add_argument("--search-ncc-min", type=float, default=0.4); ap.add_argument("--search-min-consistent", type=int, default=2); ap.add_argument("--min-pixels", type=int, default=20)
 ap.add_argument("--arc", default="auto", help="'auto' (from the grid: circular median over stations of each station's most inward-moving 120-deg arc centre) or a centre in degrees in the grid's sector convention"); ap.add_argument("--half", type=float, default=30.0, help="half-width of the declared arc, degrees")
 ap.add_argument("--fps", type=float, default=29.97); ap.add_argument("--scores-from", default=None); ap.add_argument("--no-final", action="store_true"); ap.add_argument("--gpu", type=int, default=0); ap.add_argument("--frames", default=None)
+ap.add_argument("--plain", action="store_true", help="no search: final sweep with zero velocity everywhere (the uncompensated baseline with identical gates)")
 a = ap.parse_args(); os.makedirs(f"{a.out}/dense/stereo/depth_maps", exist_ok=True); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap"); dev = torch.device(f"cuda:{a.gpu}")
 def sh(cmd):
     r = subprocess.run([COLMAP] + cmd, capture_output=True, text=True)
@@ -124,7 +125,9 @@ lo_k, hi_k = (map(int, a.frames.split(",")) if a.frames else (frames.min(), fram
 def sources(j):
     k = frames[j]; return [byidx[kk] for kk in range(k - a.window, k + a.window + 1) if kk != k and kk in byidx]
 # pass 1: search scores per (frame, station, hypothesis)
-if a.scores_from:
+if a.plain:
+    S_sum = np.zeros((N, nS, n_v)); S_cnt = np.zeros((N, nS, n_v)); print("plain sweep: no velocity search")
+elif a.scores_from:
     Sz = np.load(f"{a.scores_from}/scores.npz"); S_sum, S_cnt = Sz["S_sum"], Sz["S_cnt"]; assert list(Sz["vels"]) == vels; print("scores reused from", a.scores_from)
 else:
     S_sum = np.zeros((N, nS, n_v)); S_cnt = np.zeros((N, nS, n_v)); n_done = 0
@@ -149,7 +152,8 @@ for j in range(N):
         if Cn[j, i].max() < a.min_pixels: continue
         h = int(np.argmax(row)); vstar[j, i] = vels[h] if row[h] > row[i0] * (1 + a.margin) and row[i0] >= 0 else 0.0
 vsmooth = np.full_like(vstar, np.nan)
-for i in range(nS):
+if a.plain: vstar[:] = 0.0; vsmooth[:] = 0.0
+for i in range(0 if a.plain else nS):
     col = vstar[:, i]
     for j in range(N):
         seg = col[max(0, j - a.tsmooth):j + a.tsmooth + 1]; seg = seg[np.isfinite(seg)]

@@ -443,6 +443,83 @@ its cause) and re-read 20-V1 through the four checks; only then (2) the velocity
 under-declared moving sector, and (3) the streaming pose front end for the 26-V2 collapse frames, which no rigid
 model registers and which is the one event large enough (75 %) to clear the real-data noise floor of ≈ 0.2–0.3 R.
 
+## Day 3: the three next steps, taken in order
+
+### 1. The range bias at its source (20-V1, 337 frames, 800 px per-frame stereo)
+
+Robust slope of the wall radius against the camera's distance to the station (median over stations of the Theil–Sen
+slope; the pinhole synthetic control is −0.001, a 25 % distortion residual gives ±0.018):
+
+| 20-V1 frames | slope, R per R | positive at | far − near quartile | area ratio p5–p95 | stations passing all sector-estimator checks |
+|---|---|---|---|---|---|
+| as captured (CLAHE) | +0.196 | 100 % | +0.248 R | 0.62–1.42 | 0 / 27 |
+| + per-frame gain (bright wall → fixed level) | +0.054 | 100 % | +0.122 R | 0.79–1.31 | 4 / 24 |
+| + gain + local illumination flattening (σ 61 px) | +0.050 | 100 % | +0.104 R | 0.81–1.30 | 3 / 24 |
+| + gain + saturated / black pixels removed | +0.068 | 100 % | +0.125 R | 0.78–1.31 | 2 / 25 |
+| gain frames, k1 k2 × 0.85 | +0.063 | 95 % | +0.133 R | 0.79–1.32 | 3 / 24 |
+| gain frames, k1 k2 × 1.15 | +0.079 | 100 % | +0.119 R | 0.78–1.34 | 3 / 25 |
+
+The per-frame gain does the work (+0.20 → +0.05); flattening the illumination gradient and removing saturated
+pixels change nothing more, so the photometric part is the frame's overall level, not falloff or blown highlights.
+The remainder (+0.05 R per R, three times the synthetic residual test's size, at 100 % of stations) was the target of
+the calibration variants, and both directions make it worse (×0.85: +0.063, ×1.15: +0.079): the measured
+calibration is at the optimum of the distortion-scale channel, so the remaining bias is not a k1/k2 residual. What
+it is remains open (SfM scale drift along the path, a principal-point or focal residual, or a property of
+per-frame stereo on real texture at close range are the candidates left). In every variant the image check still
+fails at the best stations (corr(area, dark lumen) −0.3 to −0.8) and the sector estimator's reference arc moves with
+the moving arc at most stations.
+
+### 2. The velocity search on real frames (`m2/mc_sweep_vsearch_real.py`)
+
+Port of the synthetic search to the real station frames: stations and parallel-transported normals rebuilt from the
+per-frame grid, hypotheses as radial inward motion of a declared arc (auto centre from the grid, half-width 30°,
+i.e. under-declared), velocities in R per second, scores per station, compensated maps handed back to the real
+per-frame scorer. On the gain-normalised 20-V1 it runs end to end (337 frames, 45 min on one GPU): 32 % of cells
+decided, three quarters of them with a non-zero velocity (median 0.3 R/s). With the synthetic gate (NCC 0.6,
+3-of-4) the compensated maps are too sparse to score on real texture (757 cells against 4104); with a real-frame
+gate (NCC 0.5, 2-of-4) and the same sweep run without compensation as the like-for-like baseline:
+
+| torch sweep, gain frames | cells | slope, R per R | area ratio p5–p95 | image check |
+|---|---|---|---|---|
+| plain (v = 0) | 3057 | +0.034 (83 % positive) | 0.92–1.29 | fails (−0.55..−0.64) |
+| velocity search | 3073 | +0.034 (90 % positive) | 0.87–1.34 | fails (−0.27..−0.70) |
+
+The machinery works; whether it should be believed is another matter: with the range bias unfixed, the search is
+offered an apparent wall motion that is really camera distance, and it accepts velocities for it. The order of the
+steps stands: no real velocity is credible before the bias is gone.
+
+### 3. Carrying pose through the 26-V2 collapse
+
+The two rigid models (f1600–1903 and f1901–2068, the collapse f1908–1921 in neither, even with a 40-frame matching
+overlap) cannot be joined: their two common frames are the seam frames, and seam frames are the unreliable ones
+(model 0's own step f1901 → f1903 is four times its cruising speed; the two common frames disagree by 3° in
+rotation and the two scale estimates by 50 %; the point-feature Sim(3) leaves the common cameras 17–20° apart; the
+registrator finds no 2D–3D matches for any post-gap frame; the database holds no verified match between a collapse
+frame and any pre-gap frame). So model 0 was cut back to its last reliable frame (f1901) and the 20 following poses
+were carried on a constant-velocity prior (`m1/extrapolate_poses.py`), then per-frame stereo was run across the
+event.
+
+What came out, and what it teaches:
+- the image knows the collapse without any pose: the dark-lumen fraction falls from 0.071 (f1860–1901) to 0.062
+  (f1902–1907) to 0.047 (f1908–1921);
+- the carried frames' depths land 3–4 R too far along the path: the operator stops the scope as the airway
+  collapses, so a constant-velocity prior over-states the stereo baseline and every depth scales up with it (the
+  wall's median radius reads 0.3–0.5 R in f1908–1915 and jumps four-fold at f1916). A carried pose has an unknown
+  speed scale, and the small-baseline stereo cannot supply it;
+- the natural scale anchor, the rigid anterior arc at its canonical radius, is not available where the carried
+  frames look: those stations lie in the straight-line extension of the camera path, where the real airway bends
+  and even the registered pre-event frames show eccentric rings (outermost arc 1.2–3.1 R against 0.7–1.2 R
+  opposite), and they were never observed before the event.
+
+Design consequence for the streaming front end: the canonical wall has to be the map. The pose of a frame the rigid
+pipeline drops is the Sim(3) (or SE(3) with the wall's known radius fixing the scale) that registers the frame's
+depth on the *rigid* arc to the canonical tube, and the canonical of the collapsed segment is available from the
+post-event pullback (model 1, f1922–2068, the same wall after it re-opens). Constant-velocity carrying, path
+extension and seam-frame bridging are all ruled out by measurement now, which is what this day was for.
+
+Tools added: `m2/real_extract.py` (photometric modes), `m2/real_range_slope.py`, `m2/mc_sweep_vsearch_real.py`,
+`m1/bridge_models.py` (Sim(3) bridge through common features, rejected here on evidence), `m1/extrapolate_poses.py`.
+
 Code: `m2/mc_sweep.py`, `m2/mc_sweep_vsearch.py`, `m2/mc_sweep_vsearch2.py`, `m2/iterate.sh`, `m2/eval_velocity.py`,
 `m2/real_periodicity.py`, `m2/real_checks.py`, `m2/real_sector_estimator.py`, `m2/summary_figure.py`,
 `synthetic/distort_frames.py`.

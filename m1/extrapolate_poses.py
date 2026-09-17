@@ -7,7 +7,7 @@ unreliable ones). Optionally only frames >= --lo are kept, to limit the stereo t
 Usage: python m1/extrapolate_poses.py <workspace> <out_workspace> --last-good 1901 --hi 1921 [--lo 1800] [--fit 16]"""
 import os, argparse, subprocess, tempfile, shutil, numpy as np
 ap = argparse.ArgumentParser(); ap.add_argument("workspace"); ap.add_argument("out"); ap.add_argument("--model", default="sparse/0"); ap.add_argument("--last-good", type=int, required=True); ap.add_argument("--hi", type=int, required=True)
-ap.add_argument("--lo", type=int, default=0); ap.add_argument("--fit", type=int, default=16); ap.add_argument("--pattern", default="f{:05d}.png"); a = ap.parse_args(); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap")
+ap.add_argument("--lo", type=int, default=0); ap.add_argument("--fit", type=int, default=16); ap.add_argument("--speed-factor", type=float, default=1.0, help="scale the fitted centre velocity (and rotation rate) by this factor for the extrapolated frames"); ap.add_argument("--pattern", default="f{:05d}.png"); a = ap.parse_args(); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap")
 def sh(cmd):
     r = subprocess.run([COLMAP] + cmd, capture_output=True, text=True)
     if r.returncode != 0: raise RuntimeError(cmd[0] + "\n" + r.stderr[-1500:])
@@ -35,6 +35,7 @@ keep = {k: v for k, v in imgs.items() if a.lo <= k <= a.last_good}; fitk = sorte
 C = {k: -q2R(keep[k][2]).T @ keep[k][3] for k in fitk}; Rw = {k: q2R(keep[k][2]).T for k in fitk}          # c2w rotation
 A_ = np.vstack([np.array(fitk, float), np.ones(len(fitk))]).T; vel = np.linalg.lstsq(A_, np.array([C[k] for k in fitk]), rcond=None)[0][0]
 wrel = np.mean([logR(Rw[fitk[i + 1]] @ Rw[fitk[i]].T) / (fitk[i + 1] - fitk[i]) for i in range(len(fitk) - 1)], axis=0)
+vel = vel * a.speed_factor; wrel = wrel * a.speed_factor
 k0 = a.last_good; C0 = C[k0]; R0 = Rw[k0]; print(f"fit on f{fitk[0]}-f{fitk[-1]}: centre speed {np.linalg.norm(vel):.4f} units/frame, rotation rate {np.degrees(np.linalg.norm(wrel)):.3f} deg/frame; extrapolating f{k0 + 1}-f{a.hi}")
 newid = max(int(v[0].split()[0]) for v in imgs.values()) + 1; extra = {}
 for k in range(k0 + 1, a.hi + 1):
