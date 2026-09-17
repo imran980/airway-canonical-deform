@@ -195,6 +195,22 @@ check reads 0.57 mm median deviation (1.10 mm at p90), against 0.06–0.07 mm in
 flag that M1 introduced survives M2 unchanged: when the assumed rigid sector moves, the method says so rather than
 absorbing it.
 
+### Camera speed: the bias scales with 1/c as predicted
+
+The bias law κ·v·Z/c says a faster scope halves the error. A second collapse video was rendered with the camera at
+12 mm/s instead of 6 (100 mm tube so the event is still reached; same 74 % collapse at 3 s). The rigid pipeline
+registers 169 of 180 frames (poses 0.10 mm, dense calibre bias −0.42 mm). Plain per-frame COLMAP stereo, the M1
+estimator unchanged:
+
+| camera speed | d err mm median / p90 | CSA err median / p90 |
+|---|---|---|
+| 6 mm/s | 0.48 / 1.88 | −1.5 % / 20.7 % |
+| 12 mm/s | **0.32 / 0.80** | **+0.0 % / 6.9 %** |
+
+The median error drops by a third and the tail by more than half, in line with the prediction. For the clinic this
+is a capture instruction, not a method: a steadily withdrawn scope is a better instrument for a moving wall than a
+dwelling one. _(M2 rows for this video: pending.)_
+
 ### Deformation-aware fusion of neighbouring frames: negative
 
 To raise coverage without touching the gate, the points of frames k±F were shifted by the estimated wall motion
