@@ -168,9 +168,17 @@ motion ceiling at one station, and the error distribution over the gated cells o
 
 Real anatomy will not hand us the generator's sector weights. Replacing them by a plain ±90° posterior box (every
 posterior point assumed to move fully, no taper) in the velocity search and compensation gives, on collapse,
-d error 0.23 / 0.89 mm against 0.17 / 0.58 with the exact taper and 0.44 / 1.67 uncompensated; CSA error
-−1.2 % / 6.7 %; cartilage 0.07 mm. About a third of the gain is lost, two thirds survive: the method needs the
-right sector, not the right shape of its edges.
+the results below (cartilage 0.07 mm in both):
+
+| scenario | uncompensated | box prior (±90°, no taper) | exact taper |
+|---|---|---|---|
+| collapse 74 %, d err mm median / p90 | 0.44 / 1.67 | 0.23 / 0.89 | 0.17 / 0.58 |
+| breathing 13 % | 0.68 / 1.58 | 0.34 / 1.68 | 0.14 / 0.42 |
+
+On the collapse two thirds of the gain survive a crude sector; on the small-amplitude breathing the median gain
+halves and the tail is not improved, because with a 1.8 mm motion the taper's edge region is a large share of the
+moving pixels. The method needs the right sector and a reasonable taper; the exact edge shape matters less the
+larger the motion. (Malacia row pending.)
 
 ### Prior violated under the velocity search: still flagged
 
