@@ -88,8 +88,18 @@ Calibration, frame decoding and the measurement gates are reused from `bronchotr
       deviation on uniform contraction). Its limit is now measured, not guessed: per-frame stereo of a moving wall
       is biased by κ·v·Z/c (κ ≈ 0.3), even in stereo source side, so exact poses are not enough and the wall's
       velocity must enter the depth estimate. That is the M2 design decision.
-- [ ] M2: motion-compensated (deformation-aware) streaming depth; the 26-V2 collapse frames register in no rigid
-      model (checked down to 8 inliers / 5 %), so M2 must also carry pose through the discontinuity
+- [x] M2 depth on the synthetic tube (`m2/`, results in `docs/M2_RESULTS.md`): motion-compensated plane-sweep
+      stereo removes the velocity bias completely when the wall motion is known (0.06–0.12 mm in every scenario,
+      cartilage untouched), and a velocity search inside the stereo recovers most of it from the images alone
+      (breathing 0.68 → 0.14 mm, collapse 0.48 → 0.17, malacia 2.09 → 0.35), gated by 3-of-4 source agreement;
+      under-declaring the moving sector is safe, over-declaring breaks it; the rigidity check still flags a violated
+      prior. On real clips (20-V1, 26-V2) the per-frame radius follows the camera's distance to the station
+      (+0.12..+0.24 R per R; synthetic control ≈ 0), which by itself produces the apparent respiratory swing; four
+      ground-truth-free checks (sector, image, magnitude, camera distance) now gate real per-frame estimates and no
+      station passes them yet. Brightness normalisation removes half of the bias.
+- [ ] M2 on real data: calibrate the range-dependent bias out on a rigid segment, then the velocity search with an
+      under-declared sector; the 26-V2 collapse frames register in no rigid model (checked down to 8 inliers / 5 %),
+      so M2 must also carry pose through the discontinuity
 - [ ] streaming front end (pose + depth per frame) on 2-V2 static control
 - [ ] canonical/deformation split on 26-V2 across the collapse
 - [ ] porcine 4D-CT comparison

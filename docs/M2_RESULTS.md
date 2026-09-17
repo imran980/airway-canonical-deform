@@ -355,6 +355,41 @@ checks still fail at every station tested (against the image; common-mode at two
 only 4 of 24 stations, with excursions at the noise floor. The remaining +0.14 R per R is what the distortion test
 below has to explain.
 
+## Where M2 stands after night 2
+
+Settled on the synthetic tube (figure `docs/figures/m2_night2_summary.png`):
+- **Compensation with the true motion removes the velocity bias in every scenario** (membrane displacement error
+  0.06–0.12 mm median, 0.16–0.50 mm p90, against 0.44–2.63 mm uncompensated), and never disturbs the cartilage
+  (0.06–0.07 mm). The mechanism and the ceiling are both measured.
+- **Velocity search v2 recovers most of that gain from the images alone**: breathing 0.68 → 0.14 mm, collapse
+  0.48 → 0.17 mm, malacia 2.09 → 0.35 mm (3.5–6-fold), with the 3-of-4 source-agreement gate as the decisive
+  ingredient (relaxing it to 2-of-4 explodes the error to 0.75/8.4 mm). Its price is coverage: 18–30 % of the
+  cells the uncompensated sweep fills, because the gate refuses cells whose velocity it cannot decide.
+- **The prior's extent matters asymmetrically**: a sector prior narrower than the true moving sector is harmless
+  or better (collapse 0.17/0.56 with a 60° box), a wider one breaks the estimate (malacia 2.50 mm with a 180° box).
+  Under-declare the moving sector.
+- **The rigidity check still catches the violated prior** under the velocity search (uniform contraction: cartilage
+  deviation 0.57 mm against 0.06 elsewhere).
+- Negative results, each measured: the estimation loop seeded by the biased M1 estimate does not converge; refining
+  the velocity magnitude is marginal; fusing neighbouring frames with the deformation makes things worse
+  (p90 0.58 → 3.2 mm); the velocity search helps the median but hurts the tail at 12 mm/s camera speed.
+- _Pending at the time of writing: the clean camera-speed pair (3 and 12 mm/s with the event kept 16 mm ahead of the
+  camera), which replaces the confounded 12 mm/s row above._
+
+On real clips, what night 2 established is different in kind: **every per-frame number read so far on 20-V1 and
+26-V2 was reading a range-dependent radius bias, not the wall**. The per-frame radius grows with the camera's
+distance to the station by +0.12..+0.24 R per R (synthetic control ≤ 0.01), enough by itself to produce the whole
+20-V1 "respiratory" swing; brightness normalisation removes half of it. Four checks that need no ground truth now
+gate any real per-frame estimate (sector coherence, dark-lumen/brightness consistency, magnitude, camera-distance
+independence), and no station on either clip passes all four. _Pending: the distortion test (static renders
+barrel-distorted with the 26-V2 lens, recovered with the exact and with a 25 %-wrong calibration), which decides
+whether the remaining geometric half is a calibration residual._
+
+Order of the next steps, changed by these findings: (1) calibrate the range bias out on a rigid segment (or fix
+its cause) and re-read 20-V1 through the four checks; only then (2) the velocity search on real frames with an
+under-declared moving sector, and (3) the streaming pose front end for the 26-V2 collapse frames, which no rigid
+model registers and which is the one event large enough (75 %) to clear the real-data noise floor of ≈ 0.2–0.3 R.
+
 Code: `m2/mc_sweep.py`, `m2/mc_sweep_vsearch.py`, `m2/mc_sweep_vsearch2.py`, `m2/iterate.sh`, `m2/eval_velocity.py`,
 `m2/real_periodicity.py`, `m2/real_checks.py`, `m2/real_sector_estimator.py`, `m2/summary_figure.py`,
 `synthetic/distort_frames.py`.
