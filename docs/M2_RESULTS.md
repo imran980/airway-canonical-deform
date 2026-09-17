@@ -308,5 +308,36 @@ prior-based one (median displacement over the posterior sector, never the free-s
 counterpart needs a data-driven moving sector and per-sector outlier rejection, which is the first item of the next
 step.
 
+### The dominant real-data effect: the per-frame radius follows the camera's distance to the station
+
+Built the real-data counterpart of the synthetic estimator (`m2/real_sector_estimator.py`: lost-wall sectors
+rejected, median deviation over every 120° arc, the most inward-moving arc per station with the opposite arc as a
+still reference, plus the dark-lumen check, a camera-distance check and neighbour coherence). On 20-V1 it confirms
+the verdict (20 of 27 stations: the reference arc moves with the moving arc; 6: against the image). On 26-V2 A it
+found one coherent feature, all stations 0.15–0.18 R inward during f1600–1650 and flat afterwards, and the checks
+killed it: the dark-lumen fraction is flat over those frames (0.040 vs 0.042) while the camera was closer to the
+stations then (1.1–1.3 R vs 1.6–1.8 R).
+
+That pointed at the actual mechanism. Regressing the whole-circumference median deviation of each station on the
+camera's distance to that station:
+
+| clip | stations | slope of wall radius vs camera distance | sign positive at | typical corr |
+|---|---|---|---|---|
+| 20-V1 (real) | 28 | **+0.24 R per R** (IQR +0.13..+0.29) | 100 % | +0.7..+0.9 |
+| 26-V2 A (real) | 25 | **+0.12 R per R** (IQR +0.04..+0.27) | 80 % | +0.5..+0.9 |
+| synthetic static / collapse / breathing (M1, same 0.8–3.6 R range) | 59 | −0.005 / −0.005 / −0.009 R per R; cartilage +0.001..+0.002 | — | −0.3..+0.1 |
+
+On the real clips the wall appears farther from the axis the farther the camera is from the station, by a fifth to a
+quarter of the radius per radius of distance; over the 1–2.5 R range a station is observed from, that alone moves
+the radius by 20–40 % and the area by 40–80 %, which is the size of the 20-V1 "respiratory" swing. The same
+estimator on the pinhole synthetic tube shows no such dependence (20–50× smaller slope), so the bias sits in the real
+data path and not in the estimator: residual radial distortion or intrinsics error is the first suspect (M0's third
+catch already showed a distortion mismatch moves the wall by 0.4–0.6 mm, and a wall's image position changes with
+camera distance, so a distortion residual becomes a distance-dependent radius), with SfM scale drift along the path
+second. Two consequences: (1) every per-frame real-data number so far, including the periodicity, was reading this
+bias; the four checks (sector, image, magnitude, camera distance) are now the gate any real per-frame estimate must
+pass; (2) the bias is measurable on any rigid segment as this slope and can be calibrated out before reading motion,
+which is now the first item of the real-data plan, ahead of the velocity search.
+
 Code: `m2/mc_sweep.py`, `m2/mc_sweep_vsearch.py`, `m2/mc_sweep_vsearch2.py`, `m2/iterate.sh`, `m2/eval_velocity.py`,
-`m2/real_periodicity.py`, `m2/real_checks.py`, `m2/summary_figure.py`.
+`m2/real_periodicity.py`, `m2/real_checks.py`, `m2/real_sector_estimator.py`, `m2/summary_figure.py`.
