@@ -231,6 +231,14 @@ velocities 3.5× too large for slow motion, half the truth above 12 mm/s, 42 % o
 they would remove shrinks. The compensation is worth most where the scope is slow, which is also where it is most
 needed; a fast, steady withdrawal is the complementary remedy.
 
+**Caveat found afterwards (03:20).** The collapse event of the generator sits at a fixed z = 30 mm and t = 3 s. At
+12 mm/s the camera is at z = 32 mm when the event peaks, i.e. 2 mm *past* it, so this video saw almost none of the
+collapse (the event station reports a seen reduction of 10 %, against 76 % at 6 mm/s): its wall motion was mostly
+the 10 % breathing. The rows above therefore mix two effects, a faster camera and less wall motion in view, and are
+not a clean test of the 1/c law. A clean pair is being run with the event placed 16 mm ahead of the camera at t = 3 s
+for every speed (`--collapse-z0`; 3 mm/s at z0 = 21, 12 mm/s at z0 = 48 on a 100 mm tube), matching the 6 mm/s
+reference geometry; see the table below.
+
 ### Deformation-aware fusion of neighbouring frames: negative
 
 To raise coverage without touching the gate, the points of frames k±F were shifted by the estimated wall motion

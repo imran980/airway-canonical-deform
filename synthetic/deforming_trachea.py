@@ -298,9 +298,11 @@ def main():
     ap.add_argument("--fps", type=float, default=30.0); ap.add_argument("--duration", type=float, default=6.0)
     ap.add_argument("--render", action="store_true"); ap.add_argument("--save-meshes", action="store_true"); ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--camera-speed", type=float, default=None, help="mm/s (default 6)"); ap.add_argument("--length", type=float, default=None, help="tube length mm (default 60)")
+    ap.add_argument("--collapse-z0", type=float, default=None, help="z of the collapse event mm (default 30; place it ahead of the camera at t0=3 s: z0 = -4 + 3*speed + 16)")
     a = ap.parse_args()
     p = Params(fps=a.fps, duration_s=a.duration, seed=a.seed, **SCENARIOS[a.scenario])
     if a.camera_speed is not None: p.camera_speed_mm_s = a.camera_speed
+    if a.collapse_z0 is not None: p.collapse_z0_mm = a.collapse_z0
     if a.length is not None: p.length_mm = a.length
     if a.calib: load_calib(p, a.calib)
     generate(p, a.out, render=a.render, save_meshes=a.save_meshes)
