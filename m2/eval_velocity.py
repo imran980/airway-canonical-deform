@@ -2,7 +2,7 @@
 Usage: python m2/eval_velocity.py runs/m2_collapse_vs runs/synth_collapse_30"""
 import sys, json, numpy as np
 out, run = sys.argv[1], sys.argv[2]
-V = np.load(f"{out}/velocity.npz"); vstar, zs, t, vels = V["vstar"], V["zs"], V["t"], V["vels"]
+V = np.load(f"{out}/velocity.npz"); zs, t, vels = V["zs"], V["t"], V["vels"]; vstar = V["vsmooth"] if "vsmooth" in V.files else V["vstar"]   # smoothed field when available
 g = np.load(f"{run}/gt.npz"); D = g["deformation"].astype(np.float32); th = g["theta"]; z = g["z"]; zc = g["poses_c2w"][:, 2, 3]
 mid = np.abs(np.angle(np.exp(1j * (th - np.pi)))) < np.radians(10); dmid = D[:, :, mid].max(2); ddt = np.gradient(dmid, t, axis=0)
 iz = np.array([int(np.argmin(np.abs(z - zz))) for zz in zs]); truth = ddt[:, iz]
