@@ -28,6 +28,7 @@ ap.add_argument("--tagg", type=int, default=2, help="frames on each side whose s
 ap.add_argument("--search-ncc-min", type=float, default=0.4); ap.add_argument("--search-min-consistent", type=int, default=2); ap.add_argument("--min-pixels", type=int, default=20)
 ap.add_argument("--scores-from", default=None, help="reuse pass-1 scores from another run directory"); ap.add_argument("--no-final", action="store_true", help="stop after the velocity field (no depth maps)")
 ap.add_argument("--gpu", type=int, default=0); ap.add_argument("--frames", default=None)
+ap.add_argument("--refine", default=None, help="comma-separated multiplicative factors tried around each station's chosen velocity, e.g. 0.5,0.75,1.25,1.5 (pass 2b)")
 ap.add_argument("--taper", default="true", help="true = the generator's sector weights; box:<half_angle_deg> = a plain posterior box (mis-specified prior ablation)")
 a = ap.parse_args(); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap"); dev = torch.device(f"cuda:{a.gpu}")
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "synthetic")); import deforming_trachea as dt
@@ -154,8 +155,38 @@ for i in range(nz):
         for k in range(N):
             near = fin[np.argmin(np.abs(fin - k))]; gap_ok[k] = abs(near - k) <= a.maxgap
         vsmooth[:, i] = np.where(gap_ok, filled, np.nan)
-np.savez_compressed(f"{a.out}/velocity.npz", vstar=vstar, vsmooth=vsmooth, vels=np.array(vels), zs=zs, t=t, S_sum=S_sum, S_cnt=S_cnt)
 print(f"pass 2: decided {np.isfinite(vstar).mean():.2f} of cells, smoothed field defined on {np.isfinite(vsmooth).mean():.2f}; {time.time() - t0:.0f} s")
+vcoarse = vsmooth.copy()
+if a.refine:
+    # pass 2b: multiplicative refinement of each station's velocity, scored like pass 1 (station-wise fields), summed over ±tagg frames
+    facs = [1.0] + [float(x) for x in a.refine.split(",")]; nf = len(facs); R_sum = np.zeros((N, nz, nf)); R_cnt = np.zeros((N, nz, nf)); base = np.nan_to_num(vsmooth, nan=0.0); n_done = 0
+    for j, k in enumerate(frames):
+        if k < lo_k or k > hi_k: continue
+        src_ks = [kk for kk in range(k - a.window, k + a.window + 1) if kk != k and kk in byidx]
+        if not src_ks or not np.any(base[k] != 0): continue
+        for fi_, fac in enumerate(facs):
+            vz = torch.tensor(base[k] * fac, device=dev, dtype=torch.float32)
+            cmin, depth, ok, zb, wb = sweep(j, k, src_ks, a.search_scale, a.search_planes, (lambda zmm, vz=vz: vz[torch.clamp(((zmm - zs[0]) / 1.0).round().long(), 0, nz - 1)]), a.search_ncc_min, a.search_min_consistent)
+            sel = ok & (wb > 0.6); iz = torch.clamp(((zb - zs[0]) / 1.0).round().long(), 0, nz - 1)[sel]; val = (1.0 - cmin)[sel]
+            R_sum[k, :, fi_] = torch.zeros(nz, device=dev).index_add_(0, iz, val).cpu().numpy(); R_cnt[k, :, fi_] = torch.zeros(nz, device=dev).index_add_(0, iz, torch.ones_like(val)).cpu().numpy()
+        n_done += 1
+        if n_done % 30 == 0: print(f"  pass 2b: {n_done} frames, {time.time() - t0:.0f} s", flush=True)
+    RA = np.zeros_like(R_sum)
+    for dk in range(-a.tagg, a.tagg + 1): RA += np.roll(R_sum, dk, axis=0)
+    vref_ = vsmooth.copy()
+    for k in range(N):
+        for i in range(nz):
+            if not np.isfinite(vsmooth[k, i]) or vsmooth[k, i] == 0 or RA[k, i].max() <= 0: continue
+            fbest = facs[int(np.argmax(RA[k, i]))]; vref_[k, i] = vsmooth[k, i] * fbest
+    # temporal median again on the refined field
+    vs2 = vref_.copy()
+    for i in range(nz):
+        col = vref_[:, i]
+        for k in range(N):
+            seg = col[max(0, k - a.tsmooth):k + a.tsmooth + 1]; seg = seg[np.isfinite(seg)]
+            if len(seg) >= 3: vs2[k, i] = np.median(seg)
+    vsmooth = vs2; print(f"pass 2b: refined with factors {facs}; {time.time() - t0:.0f} s")
+np.savez_compressed(f"{a.out}/velocity.npz", vstar=vstar, vsmooth=vsmooth, vcoarse=vcoarse, vels=np.array(vels), zs=zs, t=t, S_sum=S_sum, S_cnt=S_cnt)
 if a.no_final: sys.exit(0)
 # ---------------------------------------------------------------- pass 3: final compensated sweep
 n_done = 0
