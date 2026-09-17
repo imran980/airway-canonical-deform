@@ -132,8 +132,21 @@ Over-compensating a slow wall costs little; under-compensating a fast one cost e
 gains are large despite a noisy velocity.
 
 Caveat: coverage. The strict final masks keep fewer cells than COLMAP's maps (518–707 vs ≈ 2400), and at the far
-event station of the collapse only one frame survives, so the event itself is not measured there in this run. The
-next table re-tunes the final gate and the aggregation window from the saved scores.
+event station of the collapse only one frame survives, so the event itself is not measured there in this run.
+
+Re-tuning from the saved scores (pass 3 only):
+
+| variant (collapse) | cells | d err mm median / p90 | CSA err median / p90 |
+|---|---|---|---|
+| v2 defaults (3 of 4 sources agree, NCC ≥ 0.6, ±2-frame aggregation) | 518 | 0.17 / 0.58 | −0.6 % / 5.2 % |
+| ±1-frame aggregation | 491 | 0.16 / 0.57 | −0.7 % / 5.2 % |
+| relaxed final gate (2 of 4 sources, NCC ≥ 0.5) | 1910 | 1.19 / 8.26 | −11.6 % / 77 % |
+| relaxed final gate, malacia | 1104 | 3.09 / 8.90 | −22.7 % / 60 % |
+
+The aggregation window hardly matters; the final gate is decisive and cannot be relaxed: the extra cells it admits
+are the moving-wall pixels no hypothesis makes consistent, and they carry the old bias and worse. Precision and
+coverage trade against each other through this gate; the honest operating point is the strict one, with coverage
+reported. Two intermediate settings (one parameter relaxed at a time) are in the table below when available.
 
 Code: `m2/mc_sweep.py`, `m2/mc_sweep_vsearch.py`, `m2/mc_sweep_vsearch2.py`, `m2/iterate.sh`, `m2/eval_velocity.py`,
 `m2/real_periodicity.py`.
