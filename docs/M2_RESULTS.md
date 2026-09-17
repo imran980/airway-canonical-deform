@@ -153,6 +153,14 @@ that one gate; the honest operating point is the strict one, with coverage repor
 without touching the gate by fusing neighbouring frames' compensated points into each station after shifting them
 by the estimated wall motion (next section).
 
+### Mis-specified prior: a plain posterior box instead of the true taper
+
+Real anatomy will not hand us the generator's sector weights. Replacing them by a plain ±90° posterior box (every
+posterior point assumed to move fully, no taper) in the velocity search and compensation gives, on collapse,
+d error 0.23 / 0.89 mm against 0.17 / 0.58 with the exact taper and 0.44 / 1.67 uncompensated; CSA error
+−1.2 % / 6.7 %; cartilage 0.07 mm. About a third of the gain is lost, two thirds survive: the method needs the
+right sector, not the right shape of its edges.
+
 ### Deformation-aware fusion of neighbouring frames: negative
 
 To raise coverage without touching the gate, the points of frames k±F were shifted by the estimated wall motion
