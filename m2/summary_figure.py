@@ -1,7 +1,7 @@
 """Night-2 summary figure: membrane displacement error per scenario and method, from the saved eval JSONs.
 Usage: python m2/summary_figure.py [--out docs/figures/m2_night2_summary.png]"""
 import json, os, argparse, numpy as np
-import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
+import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt, matplotlib.ticker
 ap = argparse.ArgumentParser(); ap.add_argument("--out", default="docs/figures/m2_night2_summary.png"); a = ap.parse_args()
 def load(run):
     p = f"runs/{run}/m1_result.json"
@@ -35,9 +35,12 @@ for j, (name, pat, col) in enumerate(METHODS):
         if r is None: continue
         xs.append(v); ys.append(r["med"]); p9.append(r["p90"])
     if xs:
-        ax.plot(xs, ys, "o-", color=col, lw=2, ms=6, label=name, zorder=3); ax.plot(xs, p9, "_", color=col, ms=12, mew=2, zorder=3)
-ax.set_xscale("log"); ax.set_xticks([3, 6, 12]); ax.set_xticklabels(["3", "6", "12"]); ax.set_xlabel("camera speed (mm/s)"); ax.set_ylabel("membrane displacement error (mm)")
+        ax.plot(xs, ys, "o-", color=col, lw=2, ms=6, label=name, zorder=3)
+        for xv, pv in zip(xs, p9):
+            if pv <= 2.6: ax.plot([xv], [pv], "_", color=col, ms=12, mew=2, zorder=3)
+            else: ax.annotate(f"p90 {pv:.1f}", (xv, 2.55), ha="center", va="top", fontsize=7.5, color=col, rotation=90)
+ax.set_xscale("log"); ax.set_xticks([3, 6, 12]); ax.set_xticklabels(["3", "6", "12"]); ax.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter()); ax.set_xlabel("camera speed (mm/s)"); ax.set_ylabel("membrane displacement error (mm)")
 ax.set_title("collapse: same event, camera speed varied", fontsize=11, loc="left"); ax.grid(alpha=0.25, zorder=0); ax.spines[["top", "right"]].set_visible(False); ax.set_ylim(0, None)
-ax.legend(fontsize=8, frameon=False, loc="upper left", bbox_to_anchor=(0, -0.16), ncol=2); ax.set_ylim(0, 2.0)
+ax.legend(fontsize=8, frameon=False, loc="upper left", bbox_to_anchor=(0, -0.16), ncol=2); ax.set_ylim(0, 2.6)
 fig.suptitle("M2 (motion-compensated stereo) after night 2: per-frame posterior-wall displacement, all scenarios", fontweight="bold", fontsize=12)
 fig.tight_layout(rect=(0, 0.06, 1, 1)); os.makedirs(os.path.dirname(a.out), exist_ok=True); fig.savefig(a.out, dpi=120); print("figure:", a.out)
