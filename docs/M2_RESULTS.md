@@ -361,6 +361,53 @@ from 0.62–1.42 to 0.73–1.35 and the checks still fail (dark-lumen correlatio
 the sector estimator's reference arc still moves at 21 of 27 stations). The bias is not a single linear function of
 camera distance, so it has to be removed at its source, not fitted away.
 
+### Distortion test: a calibration residual is a sufficient mechanism, but the real bias is mostly photometric
+
+The static pinhole renders were barrel-distorted with the 26-V2 lens (k1 −0.087, k2 −0.094; `synthetic/distort_frames.py`)
+and put through the rigid pipeline and M1 twice: with the exact coefficients and with k1, k2 underestimated by 25 %.
+Already at the rigid level the wrong calibration turns the uniform tube's area profile from a 6 % into a 21 %
+along-tube variation, flagged by the pipeline as a candidate narrowing. Per frame, with a robust slope (median over
+stations of the Theil–Sen slope of the wall radius against the camera's distance to the station, 0.8–3.6 R):
+
+| run | stations | slope, R per R | same sign at | far − near quartile |
+|---|---|---|---|---|
+| synthetic pinhole, static | 34 | −0.001 | — | −0.003 R |
+| distorted, exact calibration | 34 | +0.005 | — | +0.010 R |
+| distorted, k1 k2 × 0.75 | 34 | **−0.018** | 85 % | **−0.062 R** |
+| real 20-V1 | 24 | **+0.196** | 100 % | **+0.248 R** |
+| real 20-V1, brightness-normalised | 20 | +0.054 | 100 % | +0.122 R |
+| real 26-V2 A | 13 | +0.041 | 77 % | +0.031 R |
+
+Reading: the pinhole and the exactly-calibrated distorted tube show no range dependence, so neither the estimator nor
+the distort–undistort resampling creates one; a 25 % distortion residual does create a consistent one (sign set by
+the sign of the residual, here the radius reads *smaller* when the camera is far), of about a quarter of 20-V1's
+size. On 20-V1 brightness normalisation removes three quarters of the effect (+0.20 → +0.05 R per R), so most of
+the real bias is photometric (the patch-match on the brighter, closer frames), and the remainder is of the size a
+calibration residual produces. These robust slopes supersede the least-squares slopes quoted above (+0.24 / +0.12),
+which were inflated by lost-wall frames at the far end. Static errors under the wrong calibration: membrane
+0.14 / 0.46 mm and cartilage 0.13 mm against 0.04 / 0.12 and 0.07 with the exact one, i.e. a 25 % distortion error
+costs 0.1 mm on a 5 mm tube before any wall moves.
+
+### Camera speed, clean pair (event 16 mm ahead of the camera at t = 3 s for every speed)
+
+| membrane displacement error, mm median / p90 | 3 mm/s | 6 mm/s (reference) | 12 mm/s |
+|---|---|---|---|
+| M1, COLMAP per-frame stereo | 0.52 / 2.45 | 0.48 / 1.88 | 0.37 / 1.14 |
+| M2 plain sweep | 0.48 / 2.14 | 0.44 / 1.67 | 0.50 / 1.02 |
+| M2 + velocity search v2 | **0.24 / 0.94** | 0.17 / 0.58 | 0.33 / 2.87 |
+| M2 + true motion | 0.09 / 0.28 | 0.07 / 0.26 | 0.07 / 0.27 |
+| area error p90 (M1) | 25 % | 21 % | 11 % |
+
+With the event now in view at every speed (seen reduction 73 / 76 / 71 %), the uncompensated tail error falls with
+camera speed as 1/c predicts (2.45 → 1.88 → 1.14 mm), the medians sit near the noise floor, and the ceiling with
+known motion is flat (0.07–0.09 mm). The velocity search behaves as the confounded run suggested: at 12 mm/s it
+decides 43 % of the cells, over-estimates slow wall motion 3.6-fold and worsens the tail (2.87 mm), because the
+wall's image motion shrinks relative to the parallax exactly as the bias it would remove shrinks. At 3 mm/s it
+pays: 55 % of the cells decided, median halved and tail cut 2.3-fold against the plain sweep (0.48 / 2.14 →
+0.24 / 0.94 mm), with the same slow-motion over-estimate (2.6-fold below 3 mm/s) that limits it everywhere. The
+velocity search is a slow-scope instrument; a fast steady withdrawal is the alternative remedy, and the two meet
+around 6 mm/s where the search gives its best absolute result (0.17 / 0.58 mm).
+
 ## Where M2 stands after night 2
 
 Settled on the synthetic tube (figure `docs/figures/m2_night2_summary.png`):
@@ -379,17 +426,17 @@ Settled on the synthetic tube (figure `docs/figures/m2_night2_summary.png`):
 - Negative results, each measured: the estimation loop seeded by the biased M1 estimate does not converge; refining
   the velocity magnitude is marginal; fusing neighbouring frames with the deformation makes things worse
   (p90 0.58 → 3.2 mm); the velocity search helps the median but hurts the tail at 12 mm/s camera speed.
-- _Pending at the time of writing: the clean camera-speed pair (3 and 12 mm/s with the event kept 16 mm ahead of the
-  camera), which replaces the confounded 12 mm/s row above._
+- **Camera speed, clean pair**: the uncompensated tail error falls 2.45 → 1.88 → 1.14 mm from 3 to 12 mm/s, the
+  ceiling with known motion is flat (0.07–0.09 mm), and the velocity search pays off only where the scope is slow.
 
 On real clips, what night 2 established is different in kind: **every per-frame number read so far on 20-V1 and
 26-V2 was reading a range-dependent radius bias, not the wall**. The per-frame radius grows with the camera's
 distance to the station by +0.12..+0.24 R per R (synthetic control ≤ 0.01), enough by itself to produce the whole
-20-V1 "respiratory" swing; brightness normalisation removes half of it. Four checks that need no ground truth now
-gate any real per-frame estimate (sector coherence, dark-lumen/brightness consistency, magnitude, camera-distance
-independence), and no station on either clip passes all four. _Pending: the distortion test (static renders
-barrel-distorted with the 26-V2 lens, recovered with the exact and with a 25 %-wrong calibration), which decides
-whether the remaining geometric half is a calibration residual._
+20-V1 "respiratory" swing; brightness normalisation removes three quarters of it (robust slope +0.20 → +0.05 R per
+R), and the distortion test shows a 25 % calibration residual produces a range dependence of the size of the
+remainder while the exact calibration produces none. Four checks that need no ground truth now gate any real
+per-frame estimate (sector coherence, dark-lumen/brightness consistency, magnitude, camera-distance independence),
+and no station on either clip passes all four.
 
 Order of the next steps, changed by these findings: (1) calibrate the range bias out on a rigid segment (or fix
 its cause) and re-read 20-V1 through the four checks; only then (2) the velocity search on real frames with an
