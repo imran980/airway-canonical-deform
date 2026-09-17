@@ -1,4 +1,4 @@
-"""Two checks that a per-frame lumen change on a real clip is wall motion and not an artefact.
+"""Three checks that a per-frame lumen change on a real clip is wall motion and not an artefact.
 
 1. Sector check. Between the widest and the narrowest frames at a station, which wall sectors moved? A membranous
    collapse or malacia is confined to a contiguous sector; a change common to the whole circumference is either
@@ -7,11 +7,14 @@
    depend on any pose or depth. Real narrowing shrinks the dark hole and brightens the image (the scope tip is
    closer to the walls); an estimate that is anti-correlated with the dark fraction, or positively correlated with
    brightness, is following illumination and camera distance, not the wall.
+3. Magnitude check. A wall folds inward by up to a radius but cannot move outward by more than a fraction of it; an
+   outward excursion > 0.5 R in the wide frames, or > 5 % of frames dilated by > 50 %, is a lost wall (free-space fill
+   leaking through holes in the depth map), not motion.
 
-Usage: python m2/real_checks.py runs/m1_real_20V1 --images runs/real_20V1/images  [--video <mp4>]  [--stations 29,30]
-(frames are read from --images as f%05d.png, or decoded sequentially from --video if given)"""
+Usage: python m2/real_checks.py runs/m1_real_20V1 --images runs/real_20V1/images  [--video <mp4> | --stats dark_lumen.npz]  [--stations 29,30]
+(frame statistics come from --stats if given, else are decoded sequentially from --video, else read from --images as f%05d.png)"""
 import sys, os, json, argparse, numpy as np, cv2
-ap = argparse.ArgumentParser(); ap.add_argument("run"); ap.add_argument("--images", default=None); ap.add_argument("--video", default=None); ap.add_argument("--stations", default=None); ap.add_argument("--min-frames", type=int, default=60)
+ap = argparse.ArgumentParser(); ap.add_argument("run"); ap.add_argument("--images", default=None); ap.add_argument("--video", default=None); ap.add_argument("--stations", default=None); ap.add_argument("--min-frames", type=int, default=60); ap.add_argument("--stats", default=None, help="dark_lumen.npz (frames, dark, bright) saved by an earlier run; use for the normalised runs so the image check sees the ORIGINAL frames")
 a = ap.parse_args()
 G = np.load(f"{a.run}/m1_real_grid.npz"); fr = G["frames"]; dev = G["dev"]; R = float(G["R"]); s_st = G["s_st"]; ratio = G["csa_fill"] / G["csa_can"][None]; nb = dev.shape[2]; tb = (np.arange(nb) + 0.5) / nb * 360 - 180
 # frame-level image statistics
@@ -20,7 +23,10 @@ def stats(img):
     g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(float); m = g > 8
     if m.sum() < 1000: return None
     v = g[m]; return float((v < 0.25 * np.percentile(v, 95)).mean()), float(np.percentile(v, 50))
-if a.video:
+if a.stats:
+    S_ = np.load(a.stats)
+    for k, dk, bk in zip(S_["frames"], S_["dark"], S_["bright"]): dark[int(k)], bright[int(k)] = float(dk), float(bk)
+elif a.video:
     cap = cv2.VideoCapture(a.video); fi = 0; lo, hi = int(fr.min()), int(fr.max())
     while True:
         ok, f = cap.read()
@@ -54,9 +60,17 @@ for i in sts:
                sectors_moving=int(moving.sum()), sectors_valid=int(fin.sum()), longest_moving_arc_deg=float(min(best, nb) * 360 / nb), sectors_still=int((fin & (np.abs(diff) < 0.03)).sum()))
     okd = ok & np.isfinite(d_series)
     if okd.sum() >= 30: rec.update(corr_csa_darkfraction=float(np.corrcoef(ratio[okd, i], d_series[okd])[0, 1]), corr_csa_brightness=float(np.corrcoef(ratio[okd, i], b_series[okd])[0, 1]))
+    # 3. magnitude check: a wall can fold inward by more than a radius (collapse) but cannot move OUTWARD by more than a
+    #    fraction of the radius (the posterior membrane bulges, the cartilage holds); an outward excursion > 0.5 R between the
+    #    narrow and the wide frames, or many frames with > 50 % dilation, means the wall was LOST in the wide frames
+    #    (free-space fill leaking through holes / depth outliers), not that it moved
+    rec["frac_frames_ratio_gt_1p5"] = float((r_ > 1.5).mean()); rec["frac_frames_ratio_lt_0p5"] = float((r_ < 0.5).mean())
+    implausible = rec["sector_dev_max_R"] > 0.5 or rec["frac_frames_ratio_gt_1p5"] > 0.05
     common_mode = rec["longest_moving_arc_deg"] >= 300 and rec["sectors_still"] == 0
     image_conflict = rec.get("corr_csa_darkfraction", 0) < -0.3 or rec.get("corr_csa_brightness", 0) > 0.3
-    rec["verdict"] = "artefact (common-mode and against the image)" if common_mode and image_conflict else ("suspect: common-mode" if common_mode else ("suspect: against the image" if image_conflict else "consistent with sectoral wall motion"))
+    failed = [n for n, f in (("common-mode (whole circumference moves together)", common_mode), ("against the image (dark-lumen / brightness correlation)", image_conflict),
+                             ("implausible magnitude (wall lost in the wide frames: outward > 0.5 R or > 5 % of frames dilated > 50 %)", implausible)) if f]
+    rec["failed_checks"] = failed; rec["verdict"] = "consistent with sectoral wall motion" if not failed else "not wall motion: " + "; ".join(failed)
     out["stations"].append(rec)
-    print(f"station {i} ({rec['arclength_R']:.1f} R, n={rec['n_frames']}): ratio p5-p95 {rec['ratio_p5_p95'][0]:.2f}-{rec['ratio_p5_p95'][1]:.2f}; moving arc {rec['longest_moving_arc_deg']:.0f} deg, still sectors {rec['sectors_still']}, max dev {rec['sector_dev_max_R']:+.2f} R at {rec['sector_dev_max_at_deg']:+.0f} deg; corr(CSA, dark) {rec.get('corr_csa_darkfraction', float('nan')):+.2f}, corr(CSA, bright) {rec.get('corr_csa_brightness', float('nan')):+.2f} -> {rec['verdict']}")
+    print(f"station {i} ({rec['arclength_R']:.1f} R, n={rec['n_frames']}): ratio p5-p95 {rec['ratio_p5_p95'][0]:.2f}-{rec['ratio_p5_p95'][1]:.2f}; moving arc {rec['longest_moving_arc_deg']:.0f} deg, still sectors {rec['sectors_still']}, max dev {rec['sector_dev_max_R']:+.2f} R at {rec['sector_dev_max_at_deg']:+.0f} deg; corr(CSA, dark) {rec.get('corr_csa_darkfraction', float('nan')):+.2f}, corr(CSA, bright) {rec.get('corr_csa_brightness', float('nan')):+.2f}; frames >1.5x {100*rec['frac_frames_ratio_gt_1p5']:.0f}% -> {rec['verdict']}")
 json.dump(out, open(f"{a.run}/real_checks.json", "w"), indent=1)

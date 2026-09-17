@@ -283,5 +283,30 @@ moving sector) and a photometric normalisation of the frames before stereo; the 
 windows of a withdrawing scope also cannot resolve a 2–3 s respiratory period. Figure:
 `docs/figures/m1_real_20V1_periodicity.png` (the swings; the periodogram peak at 32–37/min is weak).
 
+### 26-V2 pullback A (f1600–1901, the 300 frames before the posterior-wall collapse)
+
+The collapse frames themselves (f1908–1921) register in no rigid model, so this run measures the segment leading up
+to it: 302 frames, 1200 px per-frame stereo, 302 geometric maps, 3121 station cells on 40 of 48 stations. The
+per-frame area sits at a median 1.07 of the canonical (IQR 0.98–1.23) with no respiratory period (autocorrelation at
+the best period ≤ 0.14 at every station, spectral power ≤ 0.13). The two checks that condemned 20-V1 both *pass*
+here: the change is sectoral (moving arc 60–270°, 0–8 sectors still) and it is not image-driven (correlation with the
+dark-lumen fraction +0.06 to +0.16, with brightness −0.08 to +0.03). Yet it is not wall motion either. In the wide
+frames the wall sits 1.0–1.4 R *outside* its canonical position and 9–21 % of frames show a lumen dilated by more
+than 50 %, which no airway does in seconds: the model-free free-space fill leaks through holes in the depth map
+where a wall sector was not reconstructed. A third check now catches this (`m2/real_checks.py`, magnitude check:
+outward excursion > 0.5 R or > 5 % of frames dilated > 50 %), and 20-V1 fails it too on top of the other two.
+
+| real clip | frames | cells | sector check | image check | magnitude check | verdict |
+|---|---|---|---|---|---|---|
+| 20-V1 (malacia) | 337 | 4283 | all 36 sectors move together | corr(CSA, dark) −0.57..−0.84 | outward +0.7..+1.1 R | not wall motion |
+| 26-V2 A (pre-collapse) | 302 | 3121 | sectoral, 60–270° | ≈ 0 | outward +1.0..+1.4 R, 9–21 % frames > 1.5× | not wall motion |
+
+So the per-frame *area* on real clips is dominated by two failure modes the synthetic tube never showed, a
+common-mode pose/illumination swing (20-V1) and a lost-wall leak in the free-space fill (both clips), and each is
+caught by a cheap check that needs no ground truth. The synthetic estimator that survived M1 and M2 was the
+prior-based one (median displacement over the posterior sector, never the free-space area); its real-data
+counterpart needs a data-driven moving sector and per-sector outlier rejection, which is the first item of the next
+step.
+
 Code: `m2/mc_sweep.py`, `m2/mc_sweep_vsearch.py`, `m2/mc_sweep_vsearch2.py`, `m2/iterate.sh`, `m2/eval_velocity.py`,
-`m2/real_periodicity.py`.
+`m2/real_periodicity.py`, `m2/real_checks.py`, `m2/summary_figure.py`.
