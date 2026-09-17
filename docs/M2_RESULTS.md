@@ -172,6 +172,14 @@ d error 0.23 / 0.89 mm against 0.17 / 0.58 with the exact taper and 0.44 / 1.67 
 −1.2 % / 6.7 %; cartilage 0.07 mm. About a third of the gain is lost, two thirds survive: the method needs the
 right sector, not the right shape of its edges.
 
+### Prior violated under the velocity search: still flagged
+
+On the uniform-contraction scenario (the whole wall moves, nothing is rigid) the velocity search compensates only the
+sector the prior allows to move, so it cannot represent the scene: CSA error −60 % / 99.6 %, and the cartilage
+check reads 0.57 mm median deviation (1.10 mm at p90), against 0.06–0.07 mm in every prior-satisfying run. The
+flag that M1 introduced survives M2 unchanged: when the assumed rigid sector moves, the method says so rather than
+absorbing it.
+
 ### Deformation-aware fusion of neighbouring frames: negative
 
 To raise coverage without touching the gate, the points of frames k±F were shifted by the estimated wall motion
