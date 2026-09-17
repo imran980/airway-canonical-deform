@@ -143,10 +143,15 @@ Re-tuning from the saved scores (pass 3 only):
 | relaxed final gate (2 of 4 sources, NCC ≥ 0.5) | 1910 | 1.19 / 8.26 | −11.6 % / 77 % |
 | relaxed final gate, malacia | 1104 | 3.09 / 8.90 | −22.7 % / 60 % |
 
-The aggregation window hardly matters; the final gate is decisive and cannot be relaxed: the extra cells it admits
-are the moving-wall pixels no hypothesis makes consistent, and they carry the old bias and worse. Precision and
-coverage trade against each other through this gate; the honest operating point is the strict one, with coverage
-reported. Two intermediate settings (one parameter relaxed at a time) are in the table below when available.
+| 3 of 4 sources, NCC ≥ 0.5 | 547 | 0.18 / 0.61 | −0.7 % / 5.5 % |
+| 2 of 4 sources, NCC ≥ 0.6 | 1688 | 0.75 / 8.41 | −6.6 % / 78 % |
+
+The aggregation window hardly matters and the NCC threshold barely; the requirement that three of the four sources
+agree on the depth is decisive and cannot be relaxed: the cells it admits are the moving-wall pixels no hypothesis
+makes consistent, and they carry the old bias and worse. Precision and coverage trade against each other through
+that one gate; the honest operating point is the strict one, with coverage reported. Coverage is instead raised
+without touching the gate by fusing neighbouring frames' compensated points into each station after shifting them
+by the estimated wall motion (next section).
 
 Code: `m2/mc_sweep.py`, `m2/mc_sweep_vsearch.py`, `m2/mc_sweep_vsearch2.py`, `m2/iterate.sh`, `m2/eval_velocity.py`,
 `m2/real_periodicity.py`.
