@@ -572,6 +572,7 @@ depth map against truth, binned by distance, brightness, image radius, incidence
 | ground truth | 1–5 (100 frames) | raw | +2.6 % / 13.8 % | 87 % | |
 | ground truth | **3–5 only** (100 frames) | raw | **+0.1 % / 11.8 %** | **74 %** | flat (+3 % → −3 %) |
 | ground truth | ±2 (same 100 frames) | raw | +29.8 % / 44.7 % | 76 % | +22 % → +34 % |
+| **COLMAP SfM** | **3–5 only, all 276 frames (the production recipe)** | raw | **−1.3 % / 9.4 %** | **73 %** | +0.5 % → −1.9 %, flat in brightness, texture, radius, incidence |
 
 With exact poses and the airway setting, per-frame stereo reads depth a quarter too far, more the farther the wall
 (+17 % at 5–15 mm, +37 % at 65–90 mm) and more the darker the pixel (+39 % below 30 grey levels, +1.5 % above 180).
@@ -613,6 +614,7 @@ a smaller lumen and steeper light falloff. The station slope on the phantom, by 
 | ground-truth poses, ±2, raw 1200 px | +0.089 | 91 % | +0.098 R |
 | ground-truth poses, ±2, gain-normalised | +0.004 | 56 % | +0.034 R |
 | COLMAP poses, ±2, raw | −0.017 | 38 % | −0.010 R |
+| **COLMAP poses, sources 3–5, raw (the recipe)** | **−0.005** | 50 % | −0.012 R |
 
 The phantom reproduces the patient clips' signature (a radius that grows with camera distance) with exact poses and
 the airway setting, at the size of the gain-normalised 20-V1 slope, and the same two levers move it: photometric
@@ -620,8 +622,31 @@ normalisation and poses that are consistent with the images.
 
 TRANSROW
 
+**How this joins the velocity bias.** The two nights measured two biases of the same per-frame stereo and they pull
+in opposite directions on one knob. The velocity bias of M1 is κ·v·Z/c: it grows with the time gap between the
+reference frame and its sources, because the wall moves further in that gap. The range bias measured here shrinks
+with the *baseline* between them, i.e. with the same gap for a moving scope. Sources chosen by camera-centre distance
+(3–5 frames at 0.3 mm per frame) remove the attractor but hand the moving membrane a longer gap, so on a deforming
+airway the motion compensation of M2 is the partner of baseline-adaptive source selection, not an alternative to it:
+select the sources for baseline, then compensate their wall motion. The synthetic tube, with strong texture at every
+depth, never had the attractor, which is why nights 1–2 saw only the velocity term; the patient clips have both.
+
 **Applied to 20-V1** (`m1/windowed_depth_real.py --min-baseline` chooses sources by camera-centre distance,
-`--texture-gate` drops textureless pixels): MITIG
+`--texture-gate` drops textureless pixels), gain-normalised frames, 337 frames, 800 px:
+
+| 20-V1 | slope R per R (Theil–Sen) | positive at | far − near | area ratio p5–p95 | corr(area, dark lumen) at the best stations | stations passing all sector checks |
+|---|---|---|---|---|---|---|
+| as captured, ±2 | +0.196 | 100 % | +0.248 R | 0.62–1.42 | −0.57..−0.84 | 0 / 27 |
+| gain, ±2 | +0.054 | 100 % | +0.122 R | 0.79–1.31 | −0.47..−0.80 | 4 / 24 |
+| gain, sources ≥ 3 median steps | **+0.025** | 90 % | +0.045 R | 0.76–1.22 | −0.32..−0.43 (−0.77 at one) | 4 / 24 |
+| gain, sources ≥ 3 steps + texture gate 4 | **+0.016** | 86 % | +0.032 R | 0.75–1.19 | −0.32..−0.41 | 2 / 24 |
+
+The fix acts on the patient clip in the same direction as on the phantom and removes most of what the gain left:
+the slope falls another two-fold to three-fold and the area swing narrows, but it does not reach the phantom's zero,
+and the image check still fails at the best-observed stations (weaker, −0.4 instead of −0.8). What remains is
+either scale drift of the SfM poses along the path, a residual attractor at this lumen's steeper light falloff, or
+real wall motion correlated with where the scope happens to be (20-V1 is a malacia clip): separating these needs
+the CT-paired calibre of 20-V1 as truth, which is the next measurement.
 
 Tools added: `m2/real_extract.py` (photometric modes), `m2/real_range_slope.py`, `m2/mc_sweep_vsearch_real.py`,
 `m1/bridge_models.py` (Sim(3) bridge through common features, rejected here on evidence), `m1/extrapolate_poses.py`,
