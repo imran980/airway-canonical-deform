@@ -589,6 +589,19 @@ confirm: **sources 3–5 frames away instead of 1–2 remove the bias completely
 COLMAP's own poses remove a further share that exact poses cannot (bundle adjustment absorbs the residual of the
 fisheye-to-pinhole undistortion: +25 % → +14 %, the calibration-residual channel measured at about ten points).
 
+**Two channels, separated by texture** (bias of the median relative depth error by 7×7 local contrast):
+
+| sources / poses | < 2 grey levels (44 % of pixels) | 2–4 | 4–6 | 6–40 | > 40 |
+|---|---|---|---|---|---|
+| ±1–2, ground-truth poses | +43 % | +21 % | +8 % | +8..12 % | +2 % |
+| ±1–2, COLMAP poses | +30 % | +11 % | +0.3 % | −0.6..+2.6 % | −5 % |
+| 1–5, ground-truth poses | +6 % | +2 % | −1 % | ±2 % | −8 % |
+| 3–5 only, ground-truth poses | **+1.5 %** | −0.2 % | −1.4 % | ±2 % | −9 % |
+
+The attractor lives in the textureless pixels and is cured by baseline alone (+43 → +1.5 %); the residual bias in
+*textured* pixels under exact poses (+8–12 %) is the calibration-residual channel, cured by poses that are
+bundle-adjusted to the images (+0.3 %). Figure `docs/figures/c3vd_range_bias.png`.
+
 **Same code path as the patient clips.** The airway station analysis run on the phantom's SfM-pose maps gives a
 Theil–Sen slope of −0.017 R per R (8 stations, 38 % positive), because the ±2 bias is nearly flat with depth inside
 the station range there and cancels against the canonical; the airway's slope is the same mechanism in a regime with
