@@ -550,6 +550,66 @@ blocker, and the instrument to find its mechanism is a real endoscope with groun
 (real optics, known mesh) let the slope of radius against camera distance be measured against truth, photometric
 and geometric causes separated, and a correction validated before it is applied to patients.
 
+## Night 3: the range bias measured against truth on a real endoscope (C3VD), its mechanism, and its cure
+
+C3VD (real colonoscope, 195° fisheye, silicone colon phantom registered to a CT mesh) gives per-frame ground-truth
+depth and poses. `c3vd/prepare.py` undistorts the frames to the harness's 100° pinhole (1800 px, f = 755.19), remaps
+the ground-truth depth through the same map (axial depth, verified by multi-view consistency to 0.1 %, and against
+the mesh to 0.11 mm point-to-surface), and writes the ground-truth poses as a COLMAP model. `c3vd/stereo_vs_truth.py`
+runs the airway pipeline's per-frame stereo (COLMAP patch-match, ±w frames, geometric consistency) and scores every
+depth map against truth, binned by distance, brightness, image radius, incidence angle and local texture.
+
+**The measurement (cecum_t1_a, 276 frames, 800 px, scope 0.29 mm per frame):**
+
+| poses | sources | frames | rel. depth error median / MAD | pixel coverage | by distance (5–15 → 65–90 mm) |
+|---|---|---|---|---|---|
+| ground truth | ±2 (the airway setting) | raw | **+25.1 % / 42 %** | 74 % | +17 % → +37 % |
+| ground truth | ±2 | gain-normalised | +26.3 % / 43 % | 74 % | +20 % → +40 % |
+| ground truth | ±2 | raw, 1200 px | +31.1 % / 57 % | 57 % | +27 % → +60 % |
+| COLMAP SfM (0.14 mm from truth) | ±2 | raw | +14.1 % / 34 % | 75 % | +12 % → +22 % |
+| ground truth | ±2, texture gate ≥ 4 | raw | +8.5 % / 15.5 % | 8 % | flat |
+| COLMAP SfM | ±2, texture gate ≥ 4 | raw | **+0.1 % / 9.5 %** | 8 % | flat 15–50 mm |
+| ground truth | 1–5 (100 frames) | raw | +2.6 % / 13.8 % | 87 % | |
+| ground truth | **3–5 only** (100 frames) | raw | **+0.1 % / 11.8 %** | **74 %** | flat (+3 % → −3 %) |
+| ground truth | ±2 (same 100 frames) | raw | +29.8 % / 44.7 % | 76 % | +22 % → +34 % |
+
+With exact poses and the airway setting, per-frame stereo reads depth a quarter too far, more the farther the wall
+(+17 % at 5–15 mm, +37 % at 65–90 mm) and more the darker the pixel (+39 % below 30 grey levels, +1.5 % above 180).
+Inverse depth is itself 15 % too small on average and two thirds of all pixels read too far, so this is a systematic
+under-reading of disparity, not the reciprocal skew of symmetric noise. Binned by local texture it is +43 % where
+the 7×7 contrast is under 2 grey levels (44 % of all pixels), +21 % at 2–4, +8 % at 4–6 and +2 % above 40.
+
+**Mechanism: the zero-disparity attractor of small-baseline stereo.** Consecutive frames are nearly identical
+images, so the source patch at the *same* pixel, which is the hypothesis "infinitely far", always scores well in
+NCC; wherever the true-depth peak is weak (dark, textureless, far, or a slow scope) the cost surface tips toward
+large depth. This one mechanism gives the sign, the growth with distance, the brightness dependence, the texture
+dependence, the synthetic tube's immunity (strong texture everywhere), the patient clips' radius that grows with
+camera distance, and the gain normalisation's partial help. It also predicts the cure, which the last two rows
+confirm: **sources 3–5 frames away instead of 1–2 remove the bias completely (+0.1 %) at full coverage**, and
+COLMAP's own poses remove a further share that exact poses cannot (bundle adjustment absorbs the residual of the
+fisheye-to-pinhole undistortion: +25 % → +14 %, the calibration-residual channel measured at about ten points).
+
+**Same code path as the patient clips.** The airway station analysis run on the phantom's SfM-pose maps gives a
+Theil–Sen slope of −0.017 R per R (8 stations, 38 % positive), because the ±2 bias is nearly flat with depth inside
+the station range there and cancels against the canonical; the airway's slope is the same mechanism in a regime with
+a smaller lumen and steeper light falloff. The station slope on the phantom, by variant:
+
+| phantom, station analysis (Theil–Sen) | slope R per R | positive at | far − near |
+|---|---|---|---|
+| ground-truth poses, ±2, raw 800 px | +0.048 | 70 % | +0.068 R |
+| ground-truth poses, ±2, raw 1200 px | +0.089 | 91 % | +0.098 R |
+| ground-truth poses, ±2, gain-normalised | +0.004 | 56 % | +0.034 R |
+| COLMAP poses, ±2, raw | −0.017 | 38 % | −0.010 R |
+
+The phantom reproduces the patient clips' signature (a radius that grows with camera distance) with exact poses and
+the airway setting, at the size of the gain-normalised 20-V1 slope, and the same two levers move it: photometric
+normalisation and poses that are consistent with the images.
+
+TRANSROW
+
+**Applied to 20-V1** (`m1/windowed_depth_real.py --min-baseline` chooses sources by camera-centre distance,
+`--texture-gate` drops textureless pixels): MITIG
+
 Tools added: `m2/real_extract.py` (photometric modes), `m2/real_range_slope.py`, `m2/mc_sweep_vsearch_real.py`,
 `m1/bridge_models.py` (Sim(3) bridge through common features, rejected here on evidence), `m1/extrapolate_poses.py`,
 `m1/interpolate_poses.py` (now any model, dangling tracks filtered), `m2/real_event_report.py`,

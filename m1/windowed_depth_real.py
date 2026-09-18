@@ -10,11 +10,13 @@ single real clip has no scale. Stations are points on the smoothed camera path; 
 Usage: python m1/windowed_depth_real.py runs/real_26V2 --out runs/m1_real_26V2 --event 1908 1921 [--window 2] [--gpus 0,1,2,3] [--skip-stereo]
 Env:   BRONCHO_COLMAP (default colmap)"""
 import sys, os, json, argparse, subprocess, tempfile
-import numpy as np
+import numpy as np, cv2
 
 ap = argparse.ArgumentParser(); ap.add_argument("workspace"); ap.add_argument("--out", required=True); ap.add_argument("--model", default="sparse/0")
 ap.add_argument("--event", type=int, nargs=2, default=None, help="frame range of the documented wall event"); ap.add_argument("--window", type=int, default=2)
 ap.add_argument("--gpus", default="0,1,2,3"); ap.add_argument("--max-size", type=int, default=1600); ap.add_argument("--skip-stereo", action="store_true"); ap.add_argument("--ahead", default="0.8,3.5")
+ap.add_argument("--min-baseline", type=float, default=0.0, help="choose stereo sources by camera-centre distance >= this many median inter-frame steps (within --max-gap frames) instead of the fixed +-window")
+ap.add_argument("--max-gap", type=int, default=12); ap.add_argument("--texture-gate", type=float, default=0.0, help="drop depth pixels whose 7x7 local image std (grey levels) is below this before the station analysis")
 ap.add_argument("--canonical-frames", type=int, nargs=2, default=None, help="build the canonical wall from this frame range only (e.g. the post-event pullback), falling back to all frames where it has < 5 observations")
 a = ap.parse_args(); os.makedirs(a.out, exist_ok=True); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap"); dense = f"{a.out}/dense"
 from scipy.ndimage import uniform_filter1d
@@ -63,13 +65,19 @@ if not a.skip_stereo:
 cams, imgs, _ = read_model(f"{dense}/sparse"); names = sorted(imgs, key=fidx); frames = np.array([fidx(n) for n in names]); byidx = {k: n for k, n in zip(frames, names)}
 Rc2w = np.array([q2R(imgs[n][0]).T for n in names]); C = np.array([-q2R(imgs[n][0]).T @ imgs[n][1] for n in names]); N = len(names)
 # depth range from the sparse points as seen from the cameras
-dep_sparse = np.concatenate([((pts0 - C[j]) @ Rc2w[j][:, 2]) for j in range(0, N, max(1, N // 20))]); dep_sparse = dep_sparse[dep_sparse > 0]
-dmin, dmax = np.percentile(dep_sparse, 1) * 0.5, np.percentile(dep_sparse, 99) * 1.5
+if len(pts0):
+    dep_sparse = np.concatenate([((pts0 - C[j]) @ Rc2w[j][:, 2]) for j in range(0, N, max(1, N // 20))]); dep_sparse = dep_sparse[dep_sparse > 0]
+    dmin, dmax = np.percentile(dep_sparse, 1) * 0.5, np.percentile(dep_sparse, 99) * 1.5
+else: dmin, dmax = 1.0, 200.0          # a pose-only model (e.g. ground-truth poses) has no sparse points; only used to set the stereo depth range
 print(f"{N} frames f{frames.min()}-{frames.max()}; window ±{a.window}; depth range {dmin:.3f}-{dmax:.3f} scene units")
 if not a.skip_stereo:
+    step = float(np.median(np.linalg.norm(np.diff(C, axis=0), axis=1))); Cby = {k: C[j] for j, k in enumerate(frames)}
     with open(f"{dense}/stereo/patch-match.cfg", "w") as f:
         for k, n in zip(frames, names):
-            src = [byidx[j] for j in range(k - a.window, k + a.window + 1) if j != k and j in byidx]
+            if a.min_baseline > 0:
+                cand = [j for j in range(k - a.max_gap, k + a.max_gap + 1) if j != k and j in byidx and np.linalg.norm(Cby[j] - Cby[k]) >= a.min_baseline * step]
+                src = [byidx[j] for j in sorted(cand, key=lambda j: abs(j - k))[:6]]
+            else: src = [byidx[j] for j in range(k - a.window, k + a.window + 1) if j != k and j in byidx]
             if not src: src = [byidx[frames[np.argsort(np.abs(frames - k))[1]]]]
             f.write(n + "\n" + ", ".join(src) + "\n")
     sh(["patch_match_stereo", "--workspace_path", dense, "--workspace_format", "COLMAP", "--PatchMatchStereo.geom_consistency", "true", "--PatchMatchStereo.max_image_size", str(a.max_size),
@@ -112,6 +120,10 @@ for j in range(N):
     fp = f"{depth_dir}/{names[j]}.geometric.bin"
     if not os.path.exists(fp): continue
     dep = read_depth(fp); model, W, H, prm = cams[imgs[names[j]][2]]; fx, fy, cx, cy = prm[:4]; h_, w_ = dep.shape; sx, sy = w_ / W, h_ / H
+    if a.texture_gate > 0:
+        gimg = cv2.imread(f"{dense}/images/{names[j]}", cv2.IMREAD_GRAYSCALE)
+        if gimg is not None:
+            gimg = cv2.resize(gimg, (w_, h_)).astype(np.float32); mu_ = cv2.blur(gimg, (7, 7)); tex_ = np.sqrt(np.maximum(cv2.blur(gimg * gimg, (7, 7)) - mu_ * mu_, 0)); dep = np.where(tex_ >= a.texture_gate, dep, 0.0)
     v, u = np.mgrid[0:h_:2, 0:w_:2]; d_ = dep[::2, ::2]; ok = d_ > 0
     Xc = np.stack([(u[ok] - cx * sx) / (fx * sx) * d_[ok], (v[ok] - cy * sy) / (fy * sy) * d_[ok], d_[ok]], 1); Xw = (Rc2w[j] @ Xc.T).T + C[j]
     axis = Rc2w[j][:, 2]; i_c = int(np.argmin(np.linalg.norm(S - C[j], axis=1)))                      # closest path station to the camera
