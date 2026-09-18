@@ -97,9 +97,13 @@ Calibration, frame decoding and the measurement gates are reused from `bronchotr
       (+0.12..+0.24 R per R; synthetic control ≈ 0), which by itself produces the apparent respiratory swing; four
       ground-truth-free checks (sector, image, magnitude, camera distance) now gate real per-frame estimates and no
       station passes them yet. Brightness normalisation removes half of the bias.
-- [ ] M2 on real data: calibrate the range-dependent bias out on a rigid segment, then the velocity search with an
-      under-declared sector; the 26-V2 collapse frames register in no rigid model (checked down to 8 inliers / 5 %),
-      so M2 must also carry pose through the discontinuity
+- [x] The real-data range bias, measured against truth on a real endoscope (C3VD): per-frame stereo with sources
+      1–2 frames away reads depth +25 % too far (the zero-disparity attractor of small-baseline stereo, worst in dark
+      and textureless pixels, growing with distance); sources 3–5 frames away and bundle-adjusted poses make it
+      −1.3 % / 9.4 % at full coverage. Applied to 26-V2, carried poses validate within 0.05 R and the collapse
+      reads as a sectoral fold (−0.38 R, opposite arc still). `docs/M2_RESULTS.md`, night 3.
+- [ ] M2 on baseline-selected real frames (velocity compensation is the partner of baseline selection); the
+      remaining +0.02 R per R on 20-V1 against the CT-paired calibre; a saturation mask for specular highlights
 - [ ] streaming front end (pose + depth per frame) on 2-V2 static control
 - [ ] canonical/deformation split on 26-V2 across the collapse
 - [ ] porcine 4D-CT comparison

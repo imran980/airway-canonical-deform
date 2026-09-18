@@ -620,7 +620,22 @@ The phantom reproduces the patient clips' signature (a radius that grows with ca
 the airway setting, at the size of the gain-normalised 20-V1 slope, and the same two levers move it: photometric
 normalisation and poses that are consistent with the images.
 
-TRANSROW
+**Replication on a second sequence (trans_t2_a, 194 frames, a dwelling scope: median camera step 0.032 mm per
+frame, walls at 9–15 mm).** Ground truth verified as before (0.1 % self-consistency, 0.18 mm to the mesh).
+
+| trans_t2_a, ground-truth poses | rel. depth error median / MAD | coverage | station slope (Theil–Sen) |
+|---|---|---|---|
+| ±2, raw | +89 % / 98 % | 81 % | +0.125 R per R (50 % positive) |
+| ±2, gain-normalised | +94 % / 102 % | 81 % | +0.370 R per R |
+| sources by baseline ≥ 0.9 mm within 30 frames | **+12 % / 31 %** | 78 % | **−0.014 R per R (46 % positive)** |
+
+With a scope that barely moves, the ±2 window has a baseline of a few hundredths of a millimetre and returns the
+attractor almost everywhere (the bias *grows* with texture there: confident matches at zero disparity). Choosing
+sources by baseline recovers most of it and takes the station slope to zero; the residual (+56 % below 15 mm,
++60 % in pixels above 180 grey levels, thousands of percent in the most textured bins) sits in the close-range
+specular highlights of the silicone, which a saturation mask must remove on top of the baseline rule. This is the
+regime of the 26-V2 collapse frames, where the operator stops the scope: without baseline there is no per-frame
+stereo, and the rule makes that explicit by finding no sources rather than returning a depth.
 
 **How this joins the velocity bias.** The two nights measured two biases of the same per-frame stereo and they pull
 in opposite directions on one knob. The velocity bias of M1 is κ·v·Z/c: it grows with the time gap between the
@@ -647,6 +662,43 @@ and the image check still fails at the best-observed stations (weaker, −0.4 in
 either scale drift of the SfM poses along the path, a residual attractor at this lumen's steeper light falloff, or
 real wall motion correlated with where the scope happens to be (20-V1 is a malacia clip): separating these needs
 the CT-paired calibre of 20-V1 as truth, which is the next measurement.
+
+**Applied to the 26-V2 collapse (canonical-as-map run of the afternoon, now with sources ≥ 3 median steps):**
+every one of the 166 frames, including the 14 collapse frames, gets a depth map; during the dwell the baseline rule
+reaches across the event for its sources (f1903–1904 before, f1918–1927 after), which is the trade-off of the
+previous paragraph made concrete. The result answers three open questions of the afternoon at once:
+
+| 26-V2, model 1, post-event canonical | ±1–2 sources (afternoon) | sources ≥ 3 median steps |
+|---|---|---|
+| range slope, Theil–Sen | +0.041 R per R | **+0.007 R per R** (65 % positive, far − near +0.009 R) |
+| carried frames vs registered neighbours, far stations (1.7–2.1 R) | 0.4–0.7 R off | **within 0.05 R at every station** |
+| area ratio right after the event (lost-wall leakage) | 2.2–2.6 | 1.03–1.16 |
+| nearest station to the event (3.0 R, camera 1.1 R away) | area min 0.77, inward arc −0.18 R, opposite −0.12 R | area 0.72 → **0.78** → 1.03; **inward arc −0.38 R at +5°, opposite arc −0.01 R, 15 of 27 sectors still** |
+| dark-lumen fraction (pose-free) | 0.059 → 0.047 → 0.060 | same |
+
+The carried poses were right all along (the far-station offsets were the range bias), and the collapse now reads as
+what the identifiability claim predicts a membranous collapse to look like: one arc folding inward by a third of the
+radius while the opposite arc stays still. One caveat keeps it qualitative: the collapse frames' sources come from
+before and after the event, so the moving membrane is matched against a wall in a different state; making the
+−0.38 R quantitative is exactly the job of the M2 velocity compensation, applied on top of baseline selection.
+
+### Where things stand after night 3
+
+- The range-dependent radius bias that blocked every real-data result has a measured mechanism (the zero-disparity
+  attractor of small-baseline stereo, plus a smaller calibration-residual channel) and a validated cure: choose
+  stereo sources by baseline, not by frame index, and take poses from bundle adjustment. On the phantom with truth
+  this turns +25 % / 42 % into −1.3 % / 9.4 % at full coverage; on 20-V1 it removes most of the remaining slope;
+  on 26-V2 it validates the carried poses and produces the first sectoral reading of a real collapse.
+- The two nights' biases are one knob pulled two ways: baseline cures the attractor and lengthens the wall's travel
+  between reference and sources, so M2's motion compensation is the necessary partner of baseline selection on a
+  deforming wall. The synthetic results of nights 1–2 stand (strong texture, no attractor) and now have their
+  real-data counterpart.
+- Open: the last +0.02 R per R on 20-V1 (SfM scale drift, residual attractor, or real malacia correlated with scope
+  position; the CT-paired calibre is the truth to use), a saturation mask for specular highlights (trans_t2_a),
+  and M2 on the baseline-selected real frames.
+
+Tools added tonight: `c3vd/prepare.py`, `c3vd/stereo_vs_truth.py`, `c3vd/figure.py`; `m1/windowed_depth_real.py
+--min-baseline / --max-gap / --texture-gate`.
 
 Tools added: `m2/real_extract.py` (photometric modes), `m2/real_range_slope.py`, `m2/mc_sweep_vsearch_real.py`,
 `m1/bridge_models.py` (Sim(3) bridge through common features, rejected here on evidence), `m1/extrapolate_poses.py`,
