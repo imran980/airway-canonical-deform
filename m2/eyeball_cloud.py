@@ -51,7 +51,7 @@ ev = (FR >= a.event[0]) & (FR <= a.event[1]); pre = (FR >= a.pre[0]) & (FR <= a.
 print(f"{len(P)} points from {len(set(FR))} frames; kept {keep.sum()} within 3 R of the path; event points {(keep&ev).sum()}, pre-event {(keep&pre).sum()}")
 fig = plt.figure(figsize=(17, 6.2)); gs = fig.add_gridspec(1, 3, width_ratios=[1.15, 1.35, 1])
 # A: oblique 3D, image colour
-ax = fig.add_subplot(gs[0, 0], projection="3d"); m = keep
+ax = fig.add_subplot(gs[0, 0], projection="3d"); m = keep & (rr < 1.8)
 sub = np.random.default_rng(0).choice(np.where(m)[0], min(m.sum(), a.max_points // 3), replace=False)
 ax.scatter(P[sub, 0] / R, P[sub, 1] / R, P[sub, 2] / R, c=COL[sub], s=0.6, lw=0, depthshade=False)
 ax.plot(C_all[:, 0] / R, C_all[:, 1] / R, C_all[:, 2] / R, "k-", lw=2, label="camera path")
