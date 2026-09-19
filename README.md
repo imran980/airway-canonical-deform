@@ -102,8 +102,12 @@ Calibration, frame decoding and the measurement gates are reused from `bronchotr
       and textureless pixels, growing with distance); sources 3–5 frames away and bundle-adjusted poses make it
       −1.3 % / 9.4 % at full coverage. Applied to 26-V2, carried poses validate within 0.05 R and the collapse
       reads as a sectoral fold (−0.38 R, opposite arc still). `docs/M2_RESULTS.md`, night 3.
-- [ ] M2 on baseline-selected real frames (velocity compensation is the partner of baseline selection); the
-      remaining +0.02 R per R on 20-V1 against the CT-paired calibre; a saturation mask for specular highlights
+- [x] First quantitative wall motion on a real patient clip (26-V2): with per-ring common-mode shifts removed and a
+      permutation test against sham windows, a single arc (narrower than 160°, centres agreeing within 12°) folds
+      inward at five neighbouring stations over 2.2–3.0 R of wall, deepening to −0.23 R at the event (p ≤ 0.05,
+      control arc within ±0.05 R, 14–20 % of the lumen area). `docs/M2_RESULTS.md`
+- [ ] The remaining +0.02 R per R on 20-V1 against its CT-paired calibre; a saturation mask for specular
+      highlights; a clip where the wall motion is large enough for the compensation to pay for its noise floor
 - [ ] streaming front end (pose + depth per frame) on 2-V2 static control
 - [ ] canonical/deformation split on 26-V2 across the collapse
 - [ ] porcine 4D-CT comparison

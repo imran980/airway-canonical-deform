@@ -721,6 +721,50 @@ compensated run is the better *estimate of the fold* but not the better reconstr
 
 Code: `m2/mc_sweep_vsearch_real.py --mode displacement --min-baseline`, `m2/real_deform_field.py`.
 
+## Removing common-mode shifts: is the fold the same arc at neighbouring stations, and is it beyond the noise floor?
+
+The fold above was measured against the canonical wall without separating the two things a ring can do: move as a
+whole (residual range bias, scale drift, pose error) or fold on one side. `m2/sectoral_deformation.py` separates
+them. For a candidate arc the common mode is the median deviation over every sector *outside* it plus a guard band,
+so the arc opposite the candidate is only a part of that reference and its residual stays free as a control. The arc
+is chosen per station as the most inward-moving one over the window, which is a parameter fitted to the same frames,
+so the whole procedure is repeated on sham windows of the same length drawn from outside the event, each with the
+same freedom to choose its own arc: the sham distribution is the noise floor the event has to beat. The window
+statistic is the median over the window's frames, so isolated bad frames do not count.
+
+**On the uncompensated COLMAP reconstruction (night 3), the fold is real, localized and coherent:**
+
+| station (arclength) | arc centre | excursion after common-mode removal | opposite arc (control) | control scatter | sham median / 5th pct | p |
+|---|---|---|---|---|---|---|
+| 2.0 R | −50° | −0.02 R | +0.05 R | 0.07 | — | — |
+| 2.2 R | −10° | −0.11 R | +0.01 R | 0.04 | −0.07 / −0.10 | 0.032 |
+| 2.4 R | +10° | −0.12 R | +0.00 R | 0.04 | −0.08 / −0.10 | 0.000 |
+| 2.6 R | −10° | −0.12 R | +0.02 R | 0.05 | −0.03 / −0.10 | 0.000 |
+| 2.8 R | +20° | −0.18 R | −0.00 R | 0.04 | −0.03 / −0.10 | 0.000 |
+| 3.0 R | −20° | **−0.23 R** | −0.01 R | 0.03 | −0.06 / −0.08 | 0.000 |
+
+Five of the six measurable stations fold inward at p ≤ 0.05; the excursion deepens monotonically toward the event
+(−0.11 → −0.23 R over 2.2–3.0 R of wall); the arc centres agree at +2° with a median spread of 12°, i.e. the *same*
+wall segment at every station; and the control arc stays within ±0.05 R throughout, against a fold five times that.
+At the closest station none of the 42 usable sham windows reached the event's excursion. Figure
+`docs/figures/m2_26V2_sectoral_colmap.png`.
+
+**The fold is narrow.** Repeating with different arc widths: 80° gives −0.59 R at the closest station (5 of 7
+stations significant), 120° gives −0.23 R, 160° dilutes it to −0.06 R at p = 0.29 and the arc centre becomes
+unstable. So the moving segment is narrower than 160°, which is the real-data counterpart of the synthetic rule that
+under-declaring the sector is safe and over-declaring breaks the estimate. In area terms an 80–120° arc folding
+0.23–0.59 R inward removes 14–20 % of the lumen at that station.
+
+**This test also corrects the previous section.** About a third to a half of the −0.38 R quoted there was common
+mode: the sectoral part is −0.23 R at the same station and arc width. And the ranking of the two reconstructions
+reverses. Run on the displacement-compensated torch sweep, the same test gives only 1 of 4 stations significant,
+control scatter three times larger (0.09–0.16 R against 0.03–0.05 R) and sham windows reaching −0.40 R: the
+compensation raises the noise floor more than it raises the signal. **For measuring the fold, the uncompensated
+reconstruction with common-mode removal is the better instrument**; the compensation remains the right idea for the
+depth bias it was built for, but on this clip it cannot be justified by the data.
+
+Code: `m2/sectoral_deformation.py` (common-mode removal, arc selection, permutation test, figure).
+
 ### Where things stand after night 3
 
 - The range-dependent radius bias that blocked every real-data result has a measured mechanism (the zero-disparity
