@@ -682,6 +682,45 @@ radius while the opposite arc stays still. One caveat keeps it qualitative: the 
 before and after the event, so the moving membrane is matched against a wall in a different state; making the
 −0.38 R quantitative is exactly the job of the M2 velocity compensation, applied on top of baseline selection.
 
+## M2 compensation on the baseline-selected 26-V2 frames: the collapse as a number
+
+The night-3 caveat was that the collapse frames' stereo sources come from before and after the event, so the moving
+membrane is matched against a wall in a different state. That also breaks the velocity parameterisation M2 uses on
+the synthetic tube: a source 10 frames before and one 10 frames after both see the *open* wall, but a model linear in
+the time gap assigns them opposite displacements. So `m2/mc_sweep_vsearch_real.py` gained a second parameterisation
+(`--mode displacement`): the hypothesis is the reference frame's wall folded inward by d (in R) relative to the open
+wall its sources see, with sources inside the event given no warp, and it gained the baseline-adaptive source
+selection of night 3 (`--min-baseline`). Three runs on the same 166 frames and the same post-event canonical, at the
+best-observed station near the event (3.0 R along the path, camera 1.1 R away):
+
+| variant | inward arc | opposite arc (the control) | lumen area at the event / canonical |
+|---|---|---|---|
+| COLMAP patch-match, no compensation (night 3) | −0.38 R | −0.01 R | 0.78 |
+| torch sweep, no compensation (like-for-like control) | −0.21 R | −0.04 R | 1.18 |
+| torch sweep + velocity compensation | −0.24 R | −0.08 R | 0.87 |
+| **torch sweep + displacement compensation** | **−0.40 R** | −0.13 R | 0.66 |
+| the same, with the texture gate | −0.40 R | −0.13 R | 0.68 |
+
+**The number: the wall folds inward by about 0.4 R on one arc at the collapse.** Two independent implementations
+agree on it (COLMAP patch-match uncompensated, −0.38 R; the torch sweep with displacement compensation, −0.40 R),
+and the compensation is what brings the torch sweep from −0.21 to −0.40. The velocity parameterisation changes
+almost nothing (−0.24 R), exactly as the straddling-sources argument predicts, which is the evidence that the
+displacement parameterisation is the right one for a dwelling scope. A 120° arc folding 0.4 R inward removes about
+20 % of the cross-sectional area, which matches the measured area ratio of 0.78 at that station.
+
+**What the compensation actually estimated** (`m2/real_deform_field.py`, figure
+`docs/figures/m2_26V2_deform_field.png`): the median displacement over stations jumps to 0.40 R inward exactly
+during f1908–1916 and falls back afterwards, which is the event. But the field is not zero elsewhere: outside the
+event its magnitude is 0.15 R median (mostly outward), so the method's noise floor is ±0.15–0.20 R and the fold
+depth carries that uncertainty. Two consequences, both against over-claiming: the compensation deepens folds at
+stations where the uncompensated COLMAP run saw none (station 13: −0.01 → −0.24 R), so per-station numbers need the
+sector checks before they are believed; and at station 16 the opposite arc moves nearly as much as the inward one
+(−0.26 vs −0.46 R), so that station is partly a common-mode shift, not a fold. The torch sweep is also noisier than
+COLMAP patch-match overall on this clip (area ratios of 2–3 against the canonical at the far stations), so the
+compensated run is the better *estimate of the fold* but not the better reconstruction.
+
+Code: `m2/mc_sweep_vsearch_real.py --mode displacement --min-baseline`, `m2/real_deform_field.py`.
+
 ### Where things stand after night 3
 
 - The range-dependent radius bias that blocked every real-data result has a measured mechanism (the zero-disparity
