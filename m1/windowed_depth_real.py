@@ -58,6 +58,10 @@ def q2R(q):
 def fidx(n): return int(os.path.splitext(os.path.basename(n))[0].lstrip("f"))
 
 
+def depth_path(dirn, nm):
+    """geometric maps when they exist, photometric otherwise (a run with geom_consistency off writes only photometric)"""
+    g = f"{dirn}/{nm}.geometric.bin"
+    return g if os.path.exists(g) else f"{dirn}/{nm}.photometric.bin"
 def read_depth(path):
     with open(path, "rb") as f:
         hdr = b""
@@ -101,7 +105,7 @@ seg = np.linalg.norm(np.diff(Cs, axis=0), axis=1); arc = np.concatenate([[0], np
 depth_dir = f"{dense}/stereo/depth_maps"; sample_r = []
 tree_path = cKDTree(Cs)
 for j in range(0, N, max(1, N // 12)):
-    fp = f"{depth_dir}/{names[j]}.geometric.bin"
+    fp = depth_path(depth_dir, names[j])
     if not os.path.exists(fp): continue
     dep = read_depth(fp); model, W, H, prm = cams[imgs[names[j]][2]]; fx, fy, cx, cy = prm[:4]; h_, w_ = dep.shape; sx, sy = w_ / W, h_ / H
     v, u = np.mgrid[0:h_:4, 0:w_:4]; d_ = dep[::4, ::4]; ok = d_ > 0
@@ -127,7 +131,7 @@ lo_a, hi_a = [float(x) * R for x in a.ahead.split(",")]; nS, nb = len(S), 36
 r_grid = np.full((N, nS, nb), np.nan); csa_free = np.full((N, nS), np.nan); PTS = {}; CENTRE = np.zeros((nS, 2))
 n_grid = np.zeros((N, nS, nb), np.int32); mad_grid = np.full((N, nS, nb), np.nan); cos_grid = np.full((N, nS, nb), np.nan)   # per-sector support: points, radial spread, viewing incidence
 for j in range(N):
-    fp = f"{depth_dir}/{names[j]}.geometric.bin"
+    fp = depth_path(depth_dir, names[j])
     if not os.path.exists(fp): continue
     dep = read_depth(fp); model, W, H, prm = cams[imgs[names[j]][2]]; fx, fy, cx, cy = prm[:4]; h_, w_ = dep.shape; sx, sy = w_ / W, h_ / H
     if a.texture_gate > 0:

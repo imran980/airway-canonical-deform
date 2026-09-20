@@ -867,6 +867,96 @@ direction-resolved.
 Code: `m2/sectoral_scan.py` (sliding window, arc agreement, canonical-roughness gate), `m2/sectoral_coherence.py`
 (the correlation version, kept with its failure mode recorded).
 
+## Getting a full ringed tube out of 20-V1: what actually limits coverage
+
+The per-sector support gate showed that 20-V1's wall is well measured over part of each ring and unknown elsewhere.
+This section is the campaign to close the rings, judged by looking at them rather than by a coverage number, since
+two of the gates tried here were rejected precisely because the picture contradicted the statistic.
+
+**Diagnosis first** (`m2/coverage_diagnosis.py` projects a station's ring into each frame and labels every sector).
+At a well-placed frame 70–85 % of the ring is already trusted; sectors are lost in two situations, when the camera is
+so close that the ring falls outside the circular field, and along a bright band where the raw video is clipped
+(3–7 % of the disc sits at 250–255 grey levels; this is in the source, not introduced by our processing). Pooled over
+frames, 91 % of the sectors that stay unknown are blocked by *viewing incidence* — seen edge-on — rather than by
+point count or noise.
+
+**Four changes, each measured** (all on the same depth maps unless stated):
+
+| | completeness (median) | stations ≥ 90 % | largest gap (median) | observations per sector |
+|---|---|---|---|---|
+| per-frame rings, camera-path stations | (half a ring per frame) | — | — | — |
+| pool frames per sector | 81 % | 16 of 65 | 50° | 28 |
+| + stations on the lumen axis | 86 % | 28 | 30° | 32 |
+| + wider observation window per station | 92 % | 41 of 68 | 30° | 47 |
+| + judge sectors on pooled evidence, incidence ≥ 0.15 | 86 % | 26 of 63 | 40° | 40 |
+
+1. **Pool frames per sector.** No endoscope frame sees a whole cross-section, so requiring one frame to do it is the
+   wrong demand. Each sector takes its measurement from every frame that images it well. This alone turns "half a
+   ring" into 81 % median completeness.
+2. **Put the stations on the lumen axis, not the camera path** (`--recentre`, a robust circle fit to each station's
+   pooled points, one fixed centre per station so wall motion is not absorbed into a moving origin). The scope runs a
+   third of a radius off axis on average and 1.5 radii at worst, which makes the far side of every ring distant and
+   grazing. Re-centring closes station 13 from 86 % to a full ring and halves the median gap.
+3. **A wider observation window per station** (0.5–5 R ahead instead of 0.8–3.5) raises raw completeness to 92 %,
+   because a station seen over a longer stretch of path is seen from more angles. But the eyeball refuses it: the
+   extra sectors arrive as spikes reaching 2 R, from distant frames that disagree with each other.
+4. **Two gates were tried and one was wrong.** An agreement gate (frames must agree about a sector) removes the
+   spikes but also cuts station 23 from a perfect ring to 69 %, because on a malacic wall the frames disagree *because
+   the wall moves* — the same trap as the canonical-roughness gate earlier in this document. The correct criterion is
+   that the canonical radius be well *determined*, its standard error 1.25·MAD/√n below 0.04 R, which tolerates a
+   moving wall provided enough frames measured it.
+
+**Where this leaves 20-V1.** With lumen-axis stations, pooled per-sector evidence and the standard-error gate, 26 of
+63 stations carry rings at least 90 % complete and 45 are at least 80 %; the longest unbroken run of ≥ 80 % stations
+spans 3.6 R of airway, about 18 mm at this child's calibre, and the middle of the pullback reaches 94 % median
+completeness. Stations near the two ends stay C-shaped: there the far wall is never seen square-on by any frame, which
+is a capture limit, not an analysis one. Figures: `docs/figures/ring_recentre.png` (the effect of re-centring),
+`ring_agreement.png` (the rejected gate), `ring_pooled.png` (closed rings at stations 33 and 53),
+`support_20V1.png` (where the wall is measured at all).
+
+**Higher resolution did not help here.** The endoscope's circular field occupies 827 of 1920 source pixels and, after
+COLMAP's undistortion, only 440 pixels of an 800-pixel canvas, so `m2/real_prepare_hires.py` crops to the disc and
+undistorts to a pinhole covering the whole 75° field at 900 px, giving four times the pixels on the wall and visibly
+more mucosal texture. Its ring completeness came out lower (75 % median, 12 stations ≥ 90 %), but the comparison is
+not clean: the run was truncated at 236 of 337 frames by a disk limit, and its per-sector spread is twice that of the
+800 px run. Unfiltered photometric depth (geometric consistency off) was clearly worse: 58 % completeness with five
+times the radial spread. The resolution question is open; the geometry and pooling changes are what carried the
+result.
+
+**The gate thresholds, calibrated against ground truth rather than guessed.** On C3VD the true wall is known, so the
+same station analysis was run on the estimated and on the ground-truth depth maps with identical station geometry
+(an earlier attempt let the two runs re-centre independently and was measuring a shifted coordinate system, not
+accuracy). Per-sector radial error against truth, by how square-on the sector was seen:
+
+| incidence \|cos\| | 0.05–0.15 | 0.15–0.25 | 0.25–0.35 | 0.35–0.50 | 0.50–0.70 | 0.70–1.0 |
+|---|---|---|---|---|---|---|
+| per-frame sector error | 0.240 R | 0.129 R | 0.083 R | 0.074 R | 0.065 R | 0.051 R |
+
+The knee is at 0.25: above it a sector is good to 0.05–0.08 R, below 0.15 the error trebles. That justifies the
+incidence gate for **per-frame** work, which is what deformation needs. For the **pooled canonical** the picture is
+different and better: the canonical error is 0.050 R whether the incidence gate is set at 0.00 or 0.25, and rises
+only when the gate is tight enough to starve the estimate (0.068 R at 0.50). Pooling absorbs the grazing errors.
+
+So the recipe is asymmetric, and this is the generalizable part: **build the canonical ring from every sector with
+enough pooled evidence, and require square-on viewing only for the per-frame deformation.** The accuracy floor that
+comes with it, measured on a real endoscope against a CT-registered phantom, is 0.05 R for the canonical wall
+(about 0.25 mm at this calibre) and 0.08 R per frame per sector. Figure `docs/figures/gate_calibration.png`.
+
+**The recipe generalises unchanged.** Applied with identical settings to the other two datasets:
+
+| | median completeness | stations ≥ 90 % | median gap | observations per sector |
+|---|---|---|---|---|
+| C3VD phantom (real colonoscope, known geometry) | 100 % | 15 of 24 | 0° | 167 |
+| 26-V2 (the collapse clip) | 97 % | 28 of 42 | 10° | 33 |
+| 20-V1 (the malacia clip) | 86 % | 26 of 63 | 40° | 40 |
+
+20-V1 is the hardest of the three, which is consistent with everything else about it: the scope hugs one wall, so the
+far side is both distant and grazing. Figure `docs/figures/ring_three_clips.png`.
+
+Code: `m2/real_prepare_hires.py` (crop to the disc, undistort to a pinhole covering the whole field),
+`m1/windowed_depth_real.py --recentre --pixel-stride --ahead --slab --min-cosang --pm-extra`,
+`m2/support_map.py`, `m2/ring_completeness.py`, `m2/coverage_diagnosis.py`, `c3vd/gate_calibration.py`.
+
 ### Where things stand after night 3
 
 - The range-dependent radius bias that blocked every real-data result has a measured mechanism (the zero-disparity

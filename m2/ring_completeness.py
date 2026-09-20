@@ -11,14 +11,24 @@ Usage: python m2/ring_completeness.py runs/m1_20V1_hires_std [--min-obs 3] [--ou
 import argparse, os, json, numpy as np
 import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
 ap = argparse.ArgumentParser(); ap.add_argument("runs", nargs="+"); ap.add_argument("--min-obs", type=int, default=3); ap.add_argument("--pct", type=float, default=75.0)
+ap.add_argument("--pool", action="store_true", help="judge a sector on the POOLED evidence of every frame that measured it (total points, pooled scatter, best incidence) rather than requiring each frame to pass on its own: right for the canonical wall, where thirty frames contributing three points each are worth more than one frame with fifteen")
+ap.add_argument("--pool-points", type=int, default=60); ap.add_argument("--pool-cos", type=float, default=0.25); ap.add_argument("--pool-obs", type=int, default=5)
 ap.add_argument("--max-se", type=float, default=None, help="a sector is known only if its CANONICAL radius is well determined: 1.25*MAD_across_frames/sqrt(observations) <= this (in R). Unlike an agreement gate this tolerates a wall that genuinely moves, provided enough frames measured it")
 ap.add_argument("--max-disagree", type=float, default=None, help="a sector is known only if its observations AGREE: median absolute deviation across frames, in R (e.g. 0.15). Frames seeing a sector from far away or edge-on disagree, and a ring stitched from them is spiky rather than anatomical")
 ap.add_argument("--stations", type=int, nargs="*", default=None); ap.add_argument("--out", default=None); ap.add_argument("--labels", nargs="*", default=None); ap.add_argument("--ignore-support", action="store_true")
 a = ap.parse_args()
 def load(run):
     G = np.load(f"{run}/m1_real_grid.npz"); r = G["r_grid"].copy(); R = float(G["R"]); s_st = G["s_st"]
-    sup = G["support"] if ("support" in G.files and not a.ignore_support) else np.isfinite(r)
-    r = np.where(sup, r, np.nan); return G, r, R, s_st
+    if a.pool:
+        n = G["n_grid"]; cos = G["cos_grid"]; fin = np.isfinite(r)
+        tot = np.where(fin, n, 0).sum(0); best_cos = np.where(fin, cos, -1).max(0); nobs = fin.sum(0)
+        ok = (tot >= a.pool_points) & (best_cos >= a.pool_cos) & (nobs >= a.pool_obs)
+        r = np.where(fin & ok[None], r, np.nan)
+        print(f"pooled support: {int(ok.sum())} of {int((nobs>0).sum())} measured sectors keep >= {a.pool_points} points over >= {a.pool_obs} frames with incidence >= {a.pool_cos}")
+    else:
+        sup = G["support"] if ("support" in G.files and not a.ignore_support) else np.isfinite(r)
+        r = np.where(sup, r, np.nan)
+    return G, r, R, s_st
 res = []
 for ri, run in enumerate(a.runs):
     G, r, R, s_st = load(run); N, nS, nb = r.shape; lab = (a.labels[ri] if a.labels and ri < len(a.labels) else os.path.basename(run))
