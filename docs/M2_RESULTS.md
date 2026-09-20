@@ -806,10 +806,63 @@ band (30–49 cycles per minute) but weak: 14–19 % of the power and autocorrel
 | dark-lumen fraction in those windows | 0.045 vs 0.063 elsewhere | no separation |
 | corr(fold depth, dark lumen) | −0.18 | −0.15 (trusted windows), −0.05 (all) |
 
-So the method confirms the 26-V2 collapse from a blind scan of the whole clip, and it declines to quantify malacia
-on 20-V1, where the apparent folds sit on an untrustworthy canonical and fail the pose-free image check. That is the
-right answer for this data path rather than a disappointing one: 20-V1's dynamic behaviour was never independently
-quantified (see the provenance note above), and the checks are doing exactly the job they were built for.
+So the method confirms the 26-V2 collapse from a blind scan of the whole clip, and at first sight it declines to
+quantify malacia on 20-V1.
+
+### That rejection was wrong, and the reason matters for the whole project
+
+The objection: 26-V2 is the clip that rigid SfM reconstructed cleanly (two segments, 142/142 frames in one model),
+while 20-V1 is the clip whose wall motion is the point of this project. A gate that rejects 20-V1 for having a
+jagged canonical deserves scrutiny, because **a moving wall makes the canonical jagged by itself**: a time-median
+canonical mixes the open and folded states, and per-frame stereo loses the wall more often while it moves. The gate
+cannot tell that apart from a badly reconstructed sector. `m2/canonical_diagnosis.py` separates them with four
+measurements inside the suspect arc against the rest of the ring:
+
+| 20-V1, arc −136° ± 60° | inside the arc | rest of the ring |
+|---|---|---|
+| canonical roughness (time median) | 0.115 R | 0.011 R |
+| canonical roughness (75th percentile = the open phase) | **0.051 R** | — |
+| temporal autocorrelation of each sector's radius | **+0.88** | +0.79 |
+| two-humpedness of the radius distribution | **1.77** | 1.18 |
+| radius range (5th–95th percentile) | **0.77 R** | 0.16 R |
+| frames with no measurement | 82 % | 76 % |
+
+The sector's radius series is *smoother in time* than the rest of the ring, its distribution is two-humped, it sweeps
+five times the range of the rest of the ring, and rebuilding the canonical from the open phase halves the
+jaggedness. That is a wall moving between two states, not a bad sector. The same table on 26-V2's arc shows none of
+it (roughness ratio 1.6, open-phase canonical no smoother, bimodality equal) — its collapse is 14 frames out of 166
+and barely perturbs the median canonical.
+
+**The fix is the project's own premise: the canonical is the open-phase wall, not the time median.** With the
+canonical rebuilt from the 75th percentile per (station, sector) (`--canonical-pct 75`), 20-V1's best windows pass
+the roughness gate (ratio 2.2) and stand as the strongest sectoral event in either clip: f2587–2597, 9–10
+neighbouring stations folding on an arc at −136° to −150° within 16–20°, deepest −0.55 to −0.75 R.
+
+**A direction-resolved, pose-free check confirms it** (`m2/image_sector_check.py`). A fold at one angle must show in
+the image as the lumen boundary moving inward *in that direction* and not on the opposite side. Projecting the arc
+into each frame and measuring how far the dark lumen extends along 12 directions:
+
+| 20-V1 | own direction | opposite | median of the other 11 |
+|---|---|---|---|
+| correlation with the estimated fold | **+0.20** | +0.02 | −0.18 |
+
+The fold's own direction lands in the top third of all directions at 5 of 6 stations (by chance 1 in 3, p = 0.018).
+This also explains why the whole-frame check rejected the clip: the dark-lumen *fraction* of the whole image is
+dominated by global illumination and camera range, and against it the sectoral fold correlates at −0.45, the
+artefact sign. Resolved by direction, the same fold correlates correctly. On 26-V2 the same test is ambiguous (own
++0.14, opposite +0.48): a near-complete collapse shrinks the lumen from every side, so a one-sided test has little to
+grip, which is the complementary case.
+
+**What 20-V1 measures.** Against the open-phase canonical, the sectoral fold alone reaches 0.56 R inward at the 5th
+percentile, which removes 27 % of the lumen area over a 120° arc; the whole ring including its common-mode component
+reaches 42 % at the same percentile, and our earlier independent cloud-based estimate for this patient was 45 %
+(lumen 33 → 18 mm²). The common-mode part has an amplitude of only 0.11 R against the fold's 0.58 R, so on this
+clip the sectoral signal dominates what the earlier whole-ring analysis was measuring.
+
+Two things still stand against over-claiming: the direction-resolved correlations are weak in absolute terms
+(+0.20), resting on the contrast with the other directions rather than on their own size; and the whole-frame
+illumination effect is strong enough to reverse the sign of a naive check, so any future claim on this clip must be
+direction-resolved.
 
 Code: `m2/sectoral_scan.py` (sliding window, arc agreement, canonical-roughness gate), `m2/sectoral_coherence.py`
 (the correlation version, kept with its failure mode recorded).

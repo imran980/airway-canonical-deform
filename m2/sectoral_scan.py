@@ -13,7 +13,7 @@ Usage: python m2/sectoral_scan.py runs/m1_real_20V1_eye --length 13 --step 3 --o
 """
 import argparse, os, json, numpy as np
 import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
-ap = argparse.ArgumentParser(); ap.add_argument("run"); ap.add_argument("--arc-width", type=float, default=120.0); ap.add_argument("--guard", type=int, default=2)
+ap = argparse.ArgumentParser(); ap.add_argument("run"); ap.add_argument("--arc-width", type=float, default=120.0); ap.add_argument("--guard", type=int, default=2); ap.add_argument("--canonical-pct", type=float, default=None, help="rebuild the canonical wall per (station, sector) as this percentile of the observed radii (e.g. 75 = the OPEN phase) instead of using the run's time-median canonical; a moving wall makes the median canonical a mixture of open and folded states")
 ap.add_argument("--length", type=int, default=13, help="window length in frames"); ap.add_argument("--step", type=int, default=3); ap.add_argument("--min-sectors", type=int, default=12)
 ap.add_argument("--min-frames", type=int, default=4, help="frames a station needs inside a window"); ap.add_argument("--min-obs", type=int, default=30, help="usable frames a station needs overall")
 ap.add_argument("--fold", type=float, default=0.12, help="excursion (R) counted as a fold"); ap.add_argument("--agree", type=float, default=30.0, help="degrees within which arcs count as the same")
@@ -22,13 +22,19 @@ ap.add_argument("--event", type=int, nargs=2, default=None, help="mark a known e
 ap.add_argument("--out", default=None); ap.add_argument("--label", default=None); ap.add_argument("--max-stations", type=int, default=30); ap.add_argument("--recompute", action="store_true")
 a = ap.parse_args()
 G = np.load(f"{a.run}/m1_real_grid.npz"); fr = G["frames"]; R = float(G["R"]); s_st = G["s_st"]
-dev = G["dev"].copy(); dev[(dev > 0.3) | (np.abs(dev) > 1.5)] = np.nan
+if a.canonical_pct is not None:
+    _r = G["r_grid"]; _R = float(G["R"])
+    with np.errstate(all="ignore"): _can = np.nanpercentile(_r, a.canonical_pct, axis=0)
+    _n = np.isfinite(_r).sum(0); _can[_n < 5] = np.nan
+    dev = (_r - _can[None]) / _R; print(f"canonical rebuilt from the {a.canonical_pct:.0f}th percentile (the open phase) on {int(np.isfinite(_can).sum())} (station, sector) cells")
+else: dev = G["dev"].copy()
+dev[(dev > 0.3) | (np.abs(dev) > 1.5)] = np.nan
 N, nS, nb = dev.shape; A = max(1, int(round(a.arc_width / 360 * nb))); tb = (np.arange(nb) + 0.5) / nb * 360 - 180
 ARC = np.array([[(b + q) % nb for q in range(A)] for b in range(nb)])
 CTRL = [np.array([q for q in range(nb) if q not in set(ARC[b]) and min((q - b) % nb, (b - q) % nb, (q - (b + A - 1)) % nb, ((b + A - 1) - q) % nb) > a.guard]) for b in range(nb)]
 obs = np.isfinite(dev).sum(2); cand = [i for i in range(nS) if (obs[:, i] >= a.min_sectors).sum() >= a.min_obs][:a.max_stations]
 # how trustworthy is the canonical ring, sector by sector: a wall that is jagged in one arc gives folds there for free
-rc = G["r_can"]; ROUGH = np.full((nS, nb), np.nan)
+rc = (_can if a.canonical_pct is not None else G["r_can"]); ROUGH = np.full((nS, nb), np.nan)
 for i in range(nS):
     rr = rc[i] / R; ROUGH[i] = np.abs(rr - 0.5 * (np.roll(rr, 1) + np.roll(rr, -1)))
 cache = f"{a.run}/sectoral_series_{int(a.arc_width)}.npz"

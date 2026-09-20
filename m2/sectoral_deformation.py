@@ -22,7 +22,13 @@ ap.add_argument("--sham", type=int, default=200, help="number of sham windows fo
 ap.add_argument("--out", default=None); ap.add_argument("--label", default=None)
 a = ap.parse_args()
 G = np.load(f"{a.run}/m1_real_grid.npz"); fr = G["frames"]; R = float(G["R"]); s_st = G["s_st"]; S = G["S"]; C = G["C"]
-dev = G["dev"].copy(); dev[(dev > 0.3) | (np.abs(dev) > 1.5)] = np.nan            # lost-wall sectors
+if a.canonical_pct is not None:
+    _r = G["r_grid"]; _R = float(G["R"])
+    with np.errstate(all="ignore"): _can = np.nanpercentile(_r, a.canonical_pct, axis=0)
+    _n = np.isfinite(_r).sum(0); _can[_n < 5] = np.nan
+    dev = (_r - _can[None]) / _R; print(f"canonical rebuilt from the {a.canonical_pct:.0f}th percentile (the open phase) on {int(np.isfinite(_can).sum())} (station, sector) cells")
+else: dev = G["dev"].copy()
+dev[(dev > 0.3) | (np.abs(dev) > 1.5)] = np.nan            # lost-wall sectors
 N, nS, nb = dev.shape; A = max(1, int(round(a.arc_width / 360 * nb))); tb = (np.arange(nb) + 0.5) / nb * 360 - 180
 def arc_idx(b, w): return [(b + q) % nb for q in range(w)]
 def window_stat(W, i, b):
