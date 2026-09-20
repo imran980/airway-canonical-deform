@@ -14,13 +14,16 @@ Usage: python m2/sectoral_coherence.py runs/m1_real_20V1_eye --arc-width 120 --o
 """
 import argparse, os, json, numpy as np
 import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
-ap = argparse.ArgumentParser(); ap.add_argument("run"); ap.add_argument("--arc-width", type=float, default=120.0); ap.add_argument("--guard", type=int, default=2)
+ap = argparse.ArgumentParser(); ap.add_argument("run"); ap.add_argument("--arc-width", type=float, default=120.0); ap.add_argument("--guard", type=int, default=2); ap.add_argument("--ignore-support", action="store_true", help="use sectors that fail the per-sector support gate (they are excluded by default)")
 ap.add_argument("--min-overlap", type=int, default=40, help="frames both stations must share"); ap.add_argument("--min-sectors", type=int, default=12)
 ap.add_argument("--shifts", type=int, default=300); ap.add_argument("--min-shift", type=int, default=10); ap.add_argument("--fps", type=float, default=29.97)
 ap.add_argument("--out", default=None); ap.add_argument("--label", default=None); ap.add_argument("--max-stations", type=int, default=40)
 a = ap.parse_args()
 G = np.load(f"{a.run}/m1_real_grid.npz"); fr = G["frames"]; R = float(G["R"]); s_st = G["s_st"]; S = G["S"]; C = G["C"]
 dev = G["dev"].copy(); dev[(dev > 0.3) | (np.abs(dev) > 1.5)] = np.nan
+if "support" in G.files and not getattr(a, "ignore_support", False):
+    _sup = G["support"]; _before = np.isfinite(dev).sum(); dev = np.where(_sup, dev, np.nan)
+    print(f"per-sector support gate: {int(np.isfinite(dev).sum())} of {int(_before)} measured cells kept ({100*np.isfinite(dev).sum()/max(_before,1):.0f} %)")
 N, nS, nb = dev.shape; A = max(1, int(round(a.arc_width / 360 * nb))); tb = (np.arange(nb) + 0.5) / nb * 360 - 180
 def arc_idx(b): return [(b + q) % nb for q in range(A)]
 def series(i):

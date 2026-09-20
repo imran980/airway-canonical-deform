@@ -13,7 +13,7 @@ Usage: python m2/sectoral_scan.py runs/m1_real_20V1_eye --length 13 --step 3 --o
 """
 import argparse, os, json, numpy as np
 import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
-ap = argparse.ArgumentParser(); ap.add_argument("run"); ap.add_argument("--arc-width", type=float, default=120.0); ap.add_argument("--guard", type=int, default=2); ap.add_argument("--canonical-pct", type=float, default=None, help="rebuild the canonical wall per (station, sector) as this percentile of the observed radii (e.g. 75 = the OPEN phase) instead of using the run's time-median canonical; a moving wall makes the median canonical a mixture of open and folded states")
+ap = argparse.ArgumentParser(); ap.add_argument("run"); ap.add_argument("--arc-width", type=float, default=120.0); ap.add_argument("--guard", type=int, default=2); ap.add_argument("--ignore-support", action="store_true", help="use sectors that fail the per-sector support gate (they are excluded by default)"); ap.add_argument("--canonical-pct", type=float, default=None, help="rebuild the canonical wall per (station, sector) as this percentile of the observed radii (e.g. 75 = the OPEN phase) instead of using the run's time-median canonical; a moving wall makes the median canonical a mixture of open and folded states")
 ap.add_argument("--length", type=int, default=13, help="window length in frames"); ap.add_argument("--step", type=int, default=3); ap.add_argument("--min-sectors", type=int, default=12)
 ap.add_argument("--min-frames", type=int, default=4, help="frames a station needs inside a window"); ap.add_argument("--min-obs", type=int, default=30, help="usable frames a station needs overall")
 ap.add_argument("--fold", type=float, default=0.12, help="excursion (R) counted as a fold"); ap.add_argument("--agree", type=float, default=30.0, help="degrees within which arcs count as the same")
@@ -29,6 +29,9 @@ if a.canonical_pct is not None:
     dev = (_r - _can[None]) / _R; print(f"canonical rebuilt from the {a.canonical_pct:.0f}th percentile (the open phase) on {int(np.isfinite(_can).sum())} (station, sector) cells")
 else: dev = G["dev"].copy()
 dev[(dev > 0.3) | (np.abs(dev) > 1.5)] = np.nan
+if "support" in G.files and not getattr(a, "ignore_support", False):
+    _sup = G["support"]; _before = np.isfinite(dev).sum(); dev = np.where(_sup, dev, np.nan)
+    print(f"per-sector support gate: {int(np.isfinite(dev).sum())} of {int(_before)} measured cells kept ({100*np.isfinite(dev).sum()/max(_before,1):.0f} %)")
 N, nS, nb = dev.shape; A = max(1, int(round(a.arc_width / 360 * nb))); tb = (np.arange(nb) + 0.5) / nb * 360 - 180
 ARC = np.array([[(b + q) % nb for q in range(A)] for b in range(nb)])
 CTRL = [np.array([q for q in range(nb) if q not in set(ARC[b]) and min((q - b) % nb, (b - q) % nb, (q - (b + A - 1)) % nb, ((b + A - 1) - q) % nb) > a.guard]) for b in range(nb)]

@@ -19,6 +19,7 @@ ap = argparse.ArgumentParser(); ap.add_argument("run"); ap.add_argument("--event
 ap.add_argument("--arc-width", type=float, default=120.0, help="width of the candidate arc, degrees"); ap.add_argument("--guard", type=int, default=2, help="sectors excluded on each side of the arc when estimating the common mode")
 ap.add_argument("--min-frames", type=int, default=4, help="frames with a usable ring needed at a station"); ap.add_argument("--min-sectors", type=int, default=12)
 ap.add_argument("--sham", type=int, default=200, help="number of sham windows for the permutation test"); ap.add_argument("--exclude", type=int, default=15, help="frames around the event excluded from the sham pool")
+ap.add_argument("--canonical-pct", type=float, default=None, help="rebuild the canonical from this percentile (the open phase) instead of the run's time median")
 ap.add_argument("--out", default=None); ap.add_argument("--label", default=None)
 a = ap.parse_args()
 G = np.load(f"{a.run}/m1_real_grid.npz"); fr = G["frames"]; R = float(G["R"]); s_st = G["s_st"]; S = G["S"]; C = G["C"]
@@ -28,7 +29,10 @@ if a.canonical_pct is not None:
     _n = np.isfinite(_r).sum(0); _can[_n < 5] = np.nan
     dev = (_r - _can[None]) / _R; print(f"canonical rebuilt from the {a.canonical_pct:.0f}th percentile (the open phase) on {int(np.isfinite(_can).sum())} (station, sector) cells")
 else: dev = G["dev"].copy()
-dev[(dev > 0.3) | (np.abs(dev) > 1.5)] = np.nan            # lost-wall sectors
+dev[(dev > 0.3) | (np.abs(dev) > 1.5)] = np.nan
+if "support" in G.files and not getattr(a, "ignore_support", False):
+    _sup = G["support"]; _before = np.isfinite(dev).sum(); dev = np.where(_sup, dev, np.nan)
+    print(f"per-sector support gate: {int(np.isfinite(dev).sum())} of {int(_before)} measured cells kept ({100*np.isfinite(dev).sum()/max(_before,1):.0f} %)")            # lost-wall sectors
 N, nS, nb = dev.shape; A = max(1, int(round(a.arc_width / 360 * nb))); tb = (np.arange(nb) + 0.5) / nb * 360 - 180
 def arc_idx(b, w): return [(b + q) % nb for q in range(w)]
 def window_stat(W, i, b):

@@ -14,7 +14,7 @@ Usage: python m2/image_sector_check.py <grid_run> --images <dense_dir_with_image
 import argparse, os, json, subprocess, tempfile, shutil, numpy as np, cv2
 ap = argparse.ArgumentParser(); ap.add_argument("run"); ap.add_argument("--images", required=True, help="a dense workspace (images/ + sparse/) built from the same poses")
 ap.add_argument("--arc", type=float, required=True); ap.add_argument("--width", type=float, default=120.0); ap.add_argument("--stations", type=int, nargs="*", default=None)
-ap.add_argument("--canonical-pct", type=float, default=75.0); ap.add_argument("--frames", type=int, nargs=2, default=None, help="restrict to this frame range (use the event window on a clip with a brief event)"); ap.add_argument("--dirs", type=int, default=12, help="directions sampled around the image for the null"); ap.add_argument("--min-frames", type=int, default=40); ap.add_argument("--label", default=None)
+ap.add_argument("--canonical-pct", type=float, default=75.0); ap.add_argument("--ignore-support", action="store_true", help="use sectors that fail the per-sector support gate (they are excluded by default)"); ap.add_argument("--frames", type=int, nargs=2, default=None, help="restrict to this frame range (use the event window on a clip with a brief event)"); ap.add_argument("--dirs", type=int, default=12, help="directions sampled around the image for the null"); ap.add_argument("--min-frames", type=int, default=40); ap.add_argument("--label", default=None)
 a = ap.parse_args(); COLMAP = os.environ.get("BRONCHO_COLMAP", "colmap")
 def sh(cmd):
     r = subprocess.run([COLMAP] + cmd, capture_output=True, text=True, errors="replace")
@@ -29,6 +29,9 @@ shutil.rmtree(td)
 G = np.load(f"{a.run}/m1_real_grid.npz"); r = G["r_grid"]; R = float(G["R"]); fr = G["frames"]; S = G["S"]; s_st = G["s_st"]; nb = r.shape[2]
 can = np.nanpercentile(r, a.canonical_pct, axis=0); can[np.isfinite(r).sum(0) < 5] = np.nan
 dev = (r - can[None]) / R; dev[(dev > 0.3) | (np.abs(dev) > 1.5)] = np.nan
+if "support" in G.files and not getattr(a, "ignore_support", False):
+    _sup = G["support"]; _before = np.isfinite(dev).sum(); dev = np.where(_sup, dev, np.nan)
+    print(f"per-sector support gate: {int(np.isfinite(dev).sum())} of {int(_before)} measured cells kept ({100*np.isfinite(dev).sum()/max(_before,1):.0f} %)")
 tb = (np.arange(nb) + 0.5) / nb * 2 * np.pi - np.pi; tdeg = np.degrees(tb)
 T = np.gradient(S, axis=0); T /= np.linalg.norm(T, axis=1, keepdims=True); N1 = np.zeros_like(S); N2 = np.zeros_like(S)
 n1 = np.cross(T[0], [0, 0, 1.0]); n1 = n1 if np.linalg.norm(n1) > 1e-3 else np.cross(T[0], [0, 1.0, 0]); n1 /= np.linalg.norm(n1)

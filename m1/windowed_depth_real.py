@@ -15,6 +15,14 @@ import numpy as np, cv2
 ap = argparse.ArgumentParser(); ap.add_argument("workspace"); ap.add_argument("--out", required=True); ap.add_argument("--model", default="sparse/0")
 ap.add_argument("--event", type=int, nargs=2, default=None, help="frame range of the documented wall event"); ap.add_argument("--window", type=int, default=2)
 ap.add_argument("--gpus", default="0,1,2,3"); ap.add_argument("--max-size", type=int, default=1600); ap.add_argument("--skip-stereo", action="store_true"); ap.add_argument("--ahead", default="0.8,3.5")
+ap.add_argument("--min-cosang", type=float, default=0.5, help="a frame contributes to a station only if the station lies within acos(this) of the view axis")
+ap.add_argument("--recentre", action="store_true", help="put each station's sector origin on the LUMEN AXIS (a robust circle fit to that station's pooled wall points) instead of on the camera path; a scope that hugs one wall otherwise makes an eccentric ring whose far side is grazing and sparse")
+ap.add_argument("--slab", type=float, default=0.10, help="half-thickness of a station's slab, in R")
+ap.add_argument("--pm-extra", default=None, help="extra PatchMatchStereo settings, e.g. 'geom_consistency=false,filter_min_ncc=0.05'")
+ap.add_argument("--pixel-stride", type=int, default=2, help="sample every Nth pixel of each depth map when building the wall points; 1 uses every pixel (4x the points per sector)")
+ap.add_argument("--min-sector-points", type=int, default=3, help="depth points a sector needs before it gets a radius at all (the raw support)")
+ap.add_argument("--support-points", type=int, default=15, help="points a sector needs to be TRUSTED"); ap.add_argument("--support-mad", type=float, default=0.12, help="max spread (MAD of the sector's radii, in R) for a trusted sector"); ap.add_argument("--support-cos", type=float, default=0.25, help="min |cos| between the view ray and the wall's radial direction: a sector seen edge-on is not measured")
+ap.add_argument("--fill-unsupported", action="store_true", help="old behaviour: fill unmeasured sectors from the canonical when computing area. OFF by default - an unsupported sector is UNKNOWN, never interpolated into motion")
 ap.add_argument("--min-baseline", type=float, default=0.0, help="choose stereo sources by camera-centre distance >= this many median inter-frame steps (within --max-gap frames) instead of the fixed +-window")
 ap.add_argument("--max-gap", type=int, default=12); ap.add_argument("--texture-gate", type=float, default=0.0, help="drop depth pixels whose 7x7 local image std (grey levels) is below this before the station analysis")
 ap.add_argument("--canonical-frames", type=int, nargs=2, default=None, help="build the canonical wall from this frame range only (e.g. the post-event pullback), falling back to all frames where it has < 5 observations")
@@ -80,9 +88,10 @@ if not a.skip_stereo:
             else: src = [byidx[j] for j in range(k - a.window, k + a.window + 1) if j != k and j in byidx]
             if not src: src = [byidx[frames[np.argsort(np.abs(frames - k))[1]]]]
             f.write(n + "\n" + ", ".join(src) + "\n")
-    sh(["patch_match_stereo", "--workspace_path", dense, "--workspace_format", "COLMAP", "--PatchMatchStereo.geom_consistency", "true", "--PatchMatchStereo.max_image_size", str(a.max_size),
-        "--PatchMatchStereo.gpu_index", a.gpus, "--PatchMatchStereo.depth_min", f"{dmin:.5f}", "--PatchMatchStereo.depth_max", f"{dmax:.5f}",
-        "--PatchMatchStereo.filter_min_triangulation_angle", "0.25", "--PatchMatchStereo.filter_min_num_consistent", "2", "--PatchMatchStereo.window_radius", "7"])
+    pm = {"geom_consistency": "true", "max_image_size": str(a.max_size), "gpu_index": a.gpus, "depth_min": f"{dmin:.5f}", "depth_max": f"{dmax:.5f}",
+          "filter_min_triangulation_angle": "0.25", "filter_min_num_consistent": "2", "window_radius": "7"}
+    for kv in (a.pm_extra.split(",") if a.pm_extra else []): k_, v_ = kv.split("="); pm[k_.strip()] = v_.strip()      # overrides, never duplicates
+    sh(["patch_match_stereo", "--workspace_path", dense, "--workspace_format", "COLMAP"] + [x for k_, v_ in pm.items() for x in (f"--PatchMatchStereo.{k_}", v_)])
     print("patch-match stereo done", flush=True)
 
 # ------------------------------------------------------------------ 2. centreline (smoothed camera path) and stations
@@ -115,7 +124,8 @@ N1 = np.zeros_like(S); N2 = np.zeros_like(S); n1 = np.cross(T[0], [0, 0, 1.0]); 
 for i in range(len(S)):
     n1 = n1 - (n1 @ T[i]) * T[i]; n1 /= np.linalg.norm(n1); N1[i] = n1; N2[i] = np.cross(T[i], n1)
 lo_a, hi_a = [float(x) * R for x in a.ahead.split(",")]; nS, nb = len(S), 36
-r_grid = np.full((N, nS, nb), np.nan); csa_free = np.full((N, nS), np.nan)
+r_grid = np.full((N, nS, nb), np.nan); csa_free = np.full((N, nS), np.nan); PTS = {}; CENTRE = np.zeros((nS, 2))
+n_grid = np.zeros((N, nS, nb), np.int32); mad_grid = np.full((N, nS, nb), np.nan); cos_grid = np.full((N, nS, nb), np.nan)   # per-sector support: points, radial spread, viewing incidence
 for j in range(N):
     fp = f"{depth_dir}/{names[j]}.geometric.bin"
     if not os.path.exists(fp): continue
@@ -124,22 +134,59 @@ for j in range(N):
         gimg = cv2.imread(f"{dense}/images/{names[j]}", cv2.IMREAD_GRAYSCALE)
         if gimg is not None:
             gimg = cv2.resize(gimg, (w_, h_)).astype(np.float32); mu_ = cv2.blur(gimg, (7, 7)); tex_ = np.sqrt(np.maximum(cv2.blur(gimg * gimg, (7, 7)) - mu_ * mu_, 0)); dep = np.where(tex_ >= a.texture_gate, dep, 0.0)
-    v, u = np.mgrid[0:h_:2, 0:w_:2]; d_ = dep[::2, ::2]; ok = d_ > 0
+    ps = a.pixel_stride; v, u = np.mgrid[0:h_:ps, 0:w_:ps]; d_ = dep[::ps, ::ps]; ok = d_ > 0
     Xc = np.stack([(u[ok] - cx * sx) / (fx * sx) * d_[ok], (v[ok] - cy * sy) / (fy * sy) * d_[ok], d_[ok]], 1); Xw = (Rc2w[j] @ Xc.T).T + C[j]
     axis = Rc2w[j][:, 2]; i_c = int(np.argmin(np.linalg.norm(S - C[j], axis=1)))                      # closest path station to the camera
     sgn = 1.0 if (T[i_c] @ axis) >= 0 else -1.0                                                          # which way along the path the camera looks
     along = sgn * (s_st - s_st[i_c]); rel_S = S - C[j]; cosang = (rel_S @ axis) / (np.linalg.norm(rel_S, axis=1) + 1e-9)
-    for i in np.where((along >= lo_a) & (along <= hi_a) & (cosang > 0.5))[0]:                            # ahead along the path, within ~60 deg of the view axis
-        rel = Xw - S[i]; along = rel @ T[i]; Q = rel[np.abs(along) < 0.1 * R]
+    for i in np.where((along >= lo_a) & (along <= hi_a) & (cosang > a.min_cosang))[0]:                            # ahead along the path, within ~60 deg of the view axis
+        rel = Xw - S[i]; along = rel @ T[i]; Q = rel[np.abs(along) < a.slab * R]
         if len(Q) < 60: continue
         x, y = Q @ N1[i], Q @ N2[i]
         nn = cKDTree(np.stack([x, y], 1)).query_ball_point(np.stack([x, y], 1), 0.06 * R, return_length=True); keep = nn >= 4
         if keep.sum() < 60: continue
-        x, y = x[keep], y[keep]; ang = np.arctan2(y, x); b = ((ang + np.pi) / (2 * np.pi) * nb).astype(int) % nb; rr = np.hypot(x, y)
-        rm = np.array([np.median(rr[b == q]) if (b == q).sum() >= 3 else np.nan for q in range(nb)]); r_grid[j, i] = rm
+        x, y = x[keep], y[keep]
+        if a.recentre: PTS.setdefault(i, []).append((j, x.astype(np.float32), y.astype(np.float32))); continue
+        ang = np.arctan2(y, x); b = ((ang + np.pi) / (2 * np.pi) * nb).astype(int) % nb; rr = np.hypot(x, y)
+        cnt = np.array([(b == q).sum() for q in range(nb)])
+        rm = np.array([np.median(rr[b == q]) if cnt[q] >= a.min_sector_points else np.nan for q in range(nb)]); r_grid[j, i] = rm; n_grid[j, i] = cnt
+        mad_grid[j, i] = np.array([np.median(np.abs(rr[b == q] - rm[q])) / R if cnt[q] >= a.min_sector_points else np.nan for q in range(nb)])
+        tb_ = (np.arange(nb) + 0.5) / nb * 2 * np.pi - np.pi                                             # how square-on the camera sees each sector
+        er = np.cos(tb_)[:, None] * N1[i][None] + np.sin(tb_)[:, None] * N2[i][None]
+        Pw = S[i][None] + np.where(np.isfinite(rm), rm, np.nanmedian(rm))[:, None] * er; view = Pw - C[j]; view /= (np.linalg.norm(view, axis=1, keepdims=True) + 1e-9)
+        cos_grid[j, i] = np.abs((er * view).sum(1))
         okb = np.isfinite(rm)
         if okb.mean() >= 0.75:
             tb = (np.arange(nb) + 0.5) / nb * 2 * np.pi - np.pi; xx, yy = rm[okb] * np.cos(tb[okb]), rm[okb] * np.sin(tb[okb]); csa_free[j, i] = 0.5 * abs(np.dot(xx, np.roll(yy, -1)) - np.dot(yy, np.roll(xx, -1)))
+if a.recentre:
+    # robust circle fit (Kasa, then trimmed re-fits) to each station's POOLED points: one fixed centre per station, so wall
+    # motion is not absorbed into a moving origin
+    def fit_centre(x, y):
+        cx_, cy_ = 0.0, 0.0
+        for _ in range(4):
+            xx, yy = x - cx_, y - cy_; rr_ = np.hypot(xx, yy); m_ = np.abs(rr_ - np.median(rr_)) < 2.5 * (np.median(np.abs(rr_ - np.median(rr_))) + 1e-6)
+            if m_.sum() < 50: break
+            X_, Y_ = x[m_], y[m_]; A_ = np.stack([2 * X_, 2 * Y_, np.ones(m_.sum())], 1); b_ = X_ ** 2 + Y_ ** 2
+            sol, *_ = np.linalg.lstsq(A_, b_, rcond=None); cx_, cy_ = float(sol[0]), float(sol[1])
+        return cx_, cy_
+    n_rc = 0
+    for i, lst in PTS.items():
+        xs = np.concatenate([p[1] for p in lst]); ys = np.concatenate([p[2] for p in lst])
+        if len(xs) < 300: continue
+        CENTRE[i] = fit_centre(xs, ys); n_rc += 1
+    print(f"re-centred {n_rc} stations on the lumen axis; median offset from the camera path {np.median(np.hypot(*CENTRE[list(PTS)].T)) / R:.2f} R, max {np.max(np.hypot(*CENTRE[list(PTS)].T)) / R:.2f} R")
+    for i, lst in PTS.items():
+        for (j, x, y) in lst:
+            x = x - CENTRE[i][0]; y = y - CENTRE[i][1]; ang = np.arctan2(y, x); b = ((ang + np.pi) / (2 * np.pi) * nb).astype(int) % nb; rr = np.hypot(x, y)
+            cnt = np.array([(b == q).sum() for q in range(nb)])
+            rm = np.array([np.median(rr[b == q]) if cnt[q] >= a.min_sector_points else np.nan for q in range(nb)]); r_grid[j, i] = rm; n_grid[j, i] = cnt
+            mad_grid[j, i] = np.array([np.median(np.abs(rr[b == q] - rm[q])) / R if cnt[q] >= a.min_sector_points else np.nan for q in range(nb)])
+            tb_ = (np.arange(nb) + 0.5) / nb * 2 * np.pi - np.pi
+            er = np.cos(tb_)[:, None] * N1[i][None] + np.sin(tb_)[:, None] * N2[i][None]
+            origin = S[i] + CENTRE[i][0] * N1[i] + CENTRE[i][1] * N2[i]
+            Pw = origin[None] + np.where(np.isfinite(rm), rm, np.nanmedian(rm))[:, None] * er; view = Pw - C[j]; view /= (np.linalg.norm(view, axis=1, keepdims=True) + 1e-9)
+            cos_grid[j, i] = np.abs((er * view).sum(1))
+    PTS.clear()
 seen = np.isfinite(r_grid).any(2); print(f"(frame, station) cells measured: {seen.sum()}; stations observed by >= 5 frames: {(seen.sum(0) >= 5).sum()}/{nS}")
 
 # ------------------------------------------------------------------ 3. canonical wall (time median) and deformation
@@ -154,10 +201,13 @@ for i in range(nS):
     if okb.mean() >= 0.75: xx, yy = r_can[i][okb] * np.cos(tb[okb]), r_can[i][okb] * np.sin(tb[okb]); csa_can[i] = 0.5 * abs(np.dot(xx, np.roll(yy, -1)) - np.dot(yy, np.roll(xx, -1)))
 # per-frame CSA with missing sectors filled from the canonical wall (like-for-like with csa_can)
 csa_fill = np.full((N, nS), np.nan)
+support = (n_grid >= a.support_points) & (mad_grid <= a.support_mad) & (cos_grid >= a.support_cos) & np.isfinite(r_grid)
+print(f"per-sector support: {100*support.mean():.0f} % of all (frame, station, sector) cells trusted; of the cells with a radius at all, {100*support.sum()/max(np.isfinite(r_grid).sum(),1):.0f} %")
 for j in range(N):
     for i in np.where(seen[j] & np.isfinite(csa_can))[0]:
-        rr = np.where(np.isfinite(r_grid[j, i]), r_grid[j, i], r_can[i]); okb = np.isfinite(rr)
-        if okb.mean() >= 0.75 and np.isfinite(r_grid[j, i]).mean() >= 0.5: xx, yy = rr[okb] * np.cos(tb[okb]), rr[okb] * np.sin(tb[okb]); csa_fill[j, i] = 0.5 * abs(np.dot(xx, np.roll(yy, -1)) - np.dot(yy, np.roll(xx, -1)))
+        sup = support[j, i]
+        rr = np.where(sup, r_grid[j, i], r_can[i] if a.fill_unsupported else np.nan); okb = np.isfinite(rr)
+        if okb.mean() >= 0.75 and sup.mean() >= 0.5: xx, yy = rr[okb] * np.cos(tb[okb]), rr[okb] * np.sin(tb[okb]); csa_fill[j, i] = 0.5 * abs(np.dot(xx, np.roll(yy, -1)) - np.dot(yy, np.roll(xx, -1)))
 ratio = csa_fill / csa_can[None]
 res = dict(workspace=a.workspace, frames=[int(frames.min()), int(frames.max())], n_frames=int(N), window=a.window, R_scene=R, n_stations=int(nS), cells=int(seen.sum()),
            csa_ratio_median_all=float(np.nanmedian(ratio)), csa_ratio_iqr_all=[float(np.nanpercentile(ratio, 25)), float(np.nanpercentile(ratio, 75))],
@@ -179,7 +229,8 @@ if a.event:
                             stations_with_event_signal=[int(i) for i in good if score[i] < -0.15])
         print("event:", json.dumps(res["event"]))
 json.dump(res, open(f"{a.out}/m1_real_result.json", "w"), indent=1)
-np.savez_compressed(f"{a.out}/m1_real_grid.npz", frames=frames, s_st=s_st, R=R, r_grid=r_grid, r_can=r_can, dev=dev, csa_fill=csa_fill, csa_can=csa_can, csa_free=csa_free, C=C, S=S)
+np.savez_compressed(f"{a.out}/m1_real_grid.npz", frames=frames, s_st=s_st, R=R, r_grid=r_grid, r_can=r_can, dev=dev, csa_fill=csa_fill, csa_can=csa_can, csa_free=csa_free, C=C, S=S,
+                    n_grid=n_grid, mad_grid=mad_grid, cos_grid=cos_grid, support=support, support_params=np.array([a.support_points, a.support_mad, a.support_cos]), centre=CENTRE, recentred=bool(a.recentre))
 print({k: v for k, v in res.items() if k != "event"})
 
 # ------------------------------------------------------------------ 4. figure

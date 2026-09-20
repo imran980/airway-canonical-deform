@@ -10,6 +10,9 @@ def ts(a, v):
     return float(np.median((vv[i] - vv[j])[m] / da[m])) if m.sum() > 50 else np.nan
 for run in runs:
     G = np.load(f"{run}/m1_real_grid.npz"); dev = G["dev"].copy(); C = G["C"]; S = G["S"]; R = float(G["R"]); dev[(dev > 0.3) | (np.abs(dev) > 1.5)] = np.nan
+if "support" in G.files and not getattr(a, "ignore_support", False):
+    _sup = G["support"]; _before = np.isfinite(dev).sum(); dev = np.where(_sup, dev, np.nan)
+    print(f"per-sector support gate: {int(np.isfinite(dev).sum())} of {int(_before)} measured cells kept ({100*np.isfinite(dev).sum()/max(_before,1):.0f} %)")
     with np.errstate(all="ignore"): med = np.nanmedian(dev, axis=2)
     sl = []; fn = []
     for i in range(dev.shape[1]):

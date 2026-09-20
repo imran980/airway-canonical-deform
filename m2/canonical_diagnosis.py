@@ -14,10 +14,13 @@ Usage: python m2/canonical_diagnosis.py runs/m1_real_20V1_b3_g0 --arc -136 --wid
 """
 import argparse, os, json, numpy as np
 ap = argparse.ArgumentParser(); ap.add_argument("run"); ap.add_argument("--arc", type=float, required=True, help="centre of the suspect arc, degrees")
-ap.add_argument("--width", type=float, default=120.0); ap.add_argument("--stations", type=int, nargs="*", default=None); ap.add_argument("--open-pct", type=float, default=75.0)
+ap.add_argument("--width", type=float, default=120.0); ap.add_argument("--ignore-support", action="store_true", help="use sectors that fail the per-sector support gate (they are excluded by default)"); ap.add_argument("--stations", type=int, nargs="*", default=None); ap.add_argument("--open-pct", type=float, default=75.0)
 ap.add_argument("--min-obs", type=int, default=20); ap.add_argument("--label", default=None)
 a = ap.parse_args()
 G = np.load(f"{a.run}/m1_real_grid.npz"); r = G["r_grid"].copy(); R = float(G["R"]); s_st = G["s_st"]; rc = G["r_can"]
+if "support" in G.files and not a.ignore_support:
+    _sup = G["support"]; _before = int(np.isfinite(r).sum()); r = np.where(_sup, r, np.nan)
+    print(f"per-sector support gate: {int(np.isfinite(r).sum())} of {_before} measured cells kept ({100*np.isfinite(r).sum()/max(_before,1):.0f} %)")
 N, nS, nb = r.shape; tb = (np.arange(nb) + 0.5) / nb * 360 - 180
 d = np.abs(np.angle(np.exp(1j * (np.radians(tb) - np.radians(a.arc))))) <= np.radians(a.width / 2)
 sts = a.stations if a.stations else [int(i) for i in np.argsort(-np.isfinite(r).any(2).sum(0))[:5]]
