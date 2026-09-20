@@ -257,7 +257,13 @@ in sign but about twice too large for slow motion misplaces them by more than th
 aware fusion therefore has to wait for a better velocity estimate; until then the single-frame estimate at the
 strict gate is the operating point.
 
-## Real video, night 2: 20-V1 (tracheobronchomalacia, CT inspiratory/expiratory 45 % area change)
+## Real video, night 2: 20-V1 (tracheobronchomalacia, clinically confirmed but never quantified)
+
+_Provenance note (added 2026-09-19): an earlier version of this heading attributed a 45 % inspiratory/expiratory area
+change to CT. That is wrong. The chart and operative-note review confirms moderate tracheobronchomalacia in words
+and states it was not quantified clinically; the 45 % (lumen 33 → 18 mm², mean 37 %) is our own earlier cloud-based
+dynamic estimate. This clip has a CT pair for **static** calibre only, so nothing here is a comparison against an
+independent dynamic measurement._
 
 Per-frame stereo (COLMAP, ±2 frames, no compensation) on the 337-frame rigid model of 20-V1, stations along the
 camera path, canonical wall = time median. Two failed attempts first: a disk-quota crunch and, more instructively, a
@@ -764,6 +770,49 @@ reconstruction with common-mode removal is the better instrument**; the compensa
 depth bias it was built for, but on this clip it cannot be justified by the data.
 
 Code: `m2/sectoral_deformation.py` (common-mode removal, arc selection, permutation test, figure).
+
+## Scanning a whole clip for sectoral folds: 20-V1 (clinical malacia) against 26-V2 (known collapse)
+
+20-V1 has no discrete event, so the event-window test above needs a generalisation: `m2/sectoral_scan.py` slides a
+13-frame window along the clip, lets every station choose its own most inward arc inside that window (with the same
+per-ring common-mode removal), and asks how many neighbouring stations fold on the *same* arc. Two design notes.
+First, a correlation-based version of this was tried and abandoned: neighbouring stations share per-frame noise, so
+even a wrongly rotated arc correlated at 0.8–0.9 and the test had no specificity. Second, the scan gained a gate
+that turned out to be decisive: the canonical ring's *roughness* in the chosen arc (its second difference,
+sector to sector) against the rest of the ring. A wall that is jagged in one arc yields folds there for free.
+
+**Validation on 26-V2.** The top-ranked window of the whole clip is f1913, the middle of the known collapse: 4
+stations folding on an arc at +19° within 15°, deepest −0.52 R, canonical-roughness ratio 1.2 (trusted). 18 of the
+19 coherent windows in that clip sit on a trustworthy canonical. Independently, the pose-free dark-lumen fraction in
+those windows is 0.045 against 0.063 elsewhere, and the fold depth correlates with it in the right direction
+(−0.18). Figure `docs/figures/m2_26V2_scan.png`.
+
+**20-V1: the strongest-looking folds are rejected, and the clip cannot carry a malacia number.** Its best windows
+look spectacular at first sight, f2587–2597 with 9–10 stations folding on an arc at −136° within 16–20°, deepest
+−0.75 R. The gate refuses all of them: in those sectors the canonical ring is 7–30 times rougher than elsewhere
+(roughness ratio 3.1–11.7; absolute roughness 0.08–0.36 R against 0.012 R), i.e. the reference the fold is measured
+against is itself unreliable there. The eyeball figure shows it directly: the canonical ring carries a jagged notch
+at exactly those angles (`docs/figures/eyeball_20V1_rings.png`). After gating, one candidate survives, an episode at
+f2645–2657 with 5–6 stations on an arc near +40°, deepest −0.7 R, roughness 1.1–1.6. It is not confirmed by the
+image: over trusted windows the fold depth correlates with the dark-lumen fraction at only −0.15, and the number of
+agreeing stations still tracks image brightness (−0.26, from −0.41 before gating). The rhythm is in the respiratory
+band (30–49 cycles per minute) but weak: 14–19 % of the power and autocorrelation ≤ 0.20 at the period.
+
+| | 26-V2 (known collapse) | 20-V1 (clinical malacia) |
+|---|---|---|
+| best window | f1913, 4 stations, arc +19° ± 15° | f2589, 10 stations, arc −136° ± 16° |
+| canonical roughness ratio there | 1.2 (trusted) | 3.2 (**rejected**) |
+| best trusted window | f1913 (the collapse itself) | f2653, 6 stations, arc +39° |
+| dark-lumen fraction in those windows | 0.045 vs 0.063 elsewhere | no separation |
+| corr(fold depth, dark lumen) | −0.18 | −0.15 (trusted windows), −0.05 (all) |
+
+So the method confirms the 26-V2 collapse from a blind scan of the whole clip, and it declines to quantify malacia
+on 20-V1, where the apparent folds sit on an untrustworthy canonical and fail the pose-free image check. That is the
+right answer for this data path rather than a disappointing one: 20-V1's dynamic behaviour was never independently
+quantified (see the provenance note above), and the checks are doing exactly the job they were built for.
+
+Code: `m2/sectoral_scan.py` (sliding window, arc agreement, canonical-roughness gate), `m2/sectoral_coherence.py`
+(the correlation version, kept with its failure mode recorded).
 
 ### Where things stand after night 3
 
